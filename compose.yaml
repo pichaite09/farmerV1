@@ -1,0 +1,48 @@
+name: farmer-main
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: farmer_main
+      POSTGRES_DB: farmer_main
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U farmer_main -d farmer_main"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [private]
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://farmer_main:${POSTGRES_PASSWORD:?required}@postgres/farmer_main
+      JWT_SECRET: ${JWT_SECRET:?required}
+      CORS_ORIGINS: ${CORS_ORIGINS:?required}
+      ATTACHMENT_STORAGE_PATH: /data/attachments
+    volumes:
+      - attachment_data:/data/attachments
+    ports: ["8090:8090"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health/ready', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 10
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    networks: [private, edge]
+volumes:
+  postgres_data:
+    name: farmer_main_postgres_data
+  attachment_data:
+    name: farmer_main_attachment_data
+networks:
+  private:
+    internal: true
+  edge: {}
