@@ -4,8 +4,36 @@ from datetime import date as DateType, datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Any
+from urllib.parse import urlsplit
+import ipaddress
+import re
 class APIModel(BaseModel):
     model_config=ConfigDict(alias_generator=lambda s: ''.join([s.split('_')[0]]+[p.title() for p in s.split('_')[1:]]),populate_by_name=True,from_attributes=True,extra='forbid')
+
+def _push_endpoint(value: str) -> str:
+    parsed = urlsplit(value)
+    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError('push endpoint must be an HTTPS URL')
+    try:
+        address = ipaddress.ip_address(parsed.hostname)
+    except ValueError:
+        address = None
+    if address is not None and (address.is_private or address.is_loopback or address.is_link_local):
+        raise ValueError('push endpoint must not target a private address')
+    allowed_hosts = (
+        parsed.hostname.lower() == 'fcm.googleapis.com'
+        or parsed.hostname.lower().endswith('.push.services.mozilla.com')
+        or parsed.hostname.lower().endswith('.web.push.apple.com')
+    )
+    if not allowed_hosts:
+        raise ValueError('push endpoint provider is not supported')
+    return value
+
+def _push_key(value: str, name: str) -> str:
+    expected = (80, 100) if name == 'p256dh' else (16, 64)
+    if not expected[0] <= len(value) <= expected[1] or re.fullmatch(r'[A-Za-z0-9_-]+', value) is None:
+        raise ValueError(f'{name} must be valid base64url text')
+    return value
 class PlotCreate(APIModel):
     name:str;area:Decimal;soil:str|None=None;image_url:str|None=None
     @field_validator('name','soil')
@@ -196,13 +224,28 @@ class PushSubscriptionKeys(APIModel):
     p256dh: str
     auth: str
 
+    @field_validator('p256dh', 'auth')
+    @classmethod
+    def valid_key(cls, value, info):
+        return _push_key(value, info.field_name)
+
 class PushSubscriptionCreate(APIModel):
     endpoint: str
     keys: PushSubscriptionKeys
 
+    @field_validator('endpoint')
+    @classmethod
+    def valid_endpoint(cls, value):
+        return _push_endpoint(value)
+
 class PushSubscriptionPatch(APIModel):
     endpoint: str | None = None
     keys: PushSubscriptionKeys | None = None
+
+    @field_validator('endpoint')
+    @classmethod
+    def valid_endpoint(cls, value):
+        return None if value is None else _push_endpoint(value)
 
 class PushSubscriptionOut(APIModel):
     id: uuid.UUID

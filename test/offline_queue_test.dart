@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:farmer/services/offline_queue.dart';
 
@@ -34,6 +36,22 @@ void main() {
     await q.flush('a', (_) async {});
     expect((await q.entriesForUser('a')), isEmpty);
     expect((await q.entriesForUser('b')).single.id, 'q2');
+  });
+
+  test('enqueue during replay is preserved', () async {
+    final q = OfflineQueue(store: MemoryOfflineQueueStore());
+    await q.enqueue(entry('a'));
+    final replayStarted = Completer<void>();
+    final releaseReplay = Completer<void>();
+    final flushFuture = q.flush('a', (_) async {
+      replayStarted.complete();
+      await releaseReplay.future;
+    });
+    await replayStarted.future;
+    final enqueueFuture = q.enqueue(entry('a', id: 'q2'));
+    releaseReplay.complete();
+    await Future.wait([flushFuture, enqueueFuture]);
+    expect((await q.entriesForUser('a')).map((e) => e.id), ['q2']);
   });
 
   test(

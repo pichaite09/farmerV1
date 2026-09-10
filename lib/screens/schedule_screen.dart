@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../models/api_models.dart';
 import '../services/api_session.dart';
+import '../services/offline_queue.dart';
 
 String _sd(DateTime d) => d.toIso8601String().split('T').first;
 Future<bool> _sc(BuildContext c, String n) => showDialog<bool>(
@@ -90,7 +91,16 @@ class _ScheduleState extends State<ScheduleScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
-      if (mounted) {
+      if (mounted && e is OfflineQueuedException) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'งานถูกบันทึกเข้าคิวแล้ว รูปภาพจะต้องแนบใหม่เมื่อออนไลน์',
+            ),
+          ),
+        );
+        _refresh();
+      } else if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
@@ -375,7 +385,12 @@ class TaskDialogState extends State<TaskDialog> {
   }
 
   Future<void> save() async {
-    if (name.text.trim().isEmpty || cycle == null) return;
+    if (name.text.trim().isEmpty || cycle == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณากรอกชื่องานและเลือกรอบการผลิต')),
+      );
+      return;
+    }
     setState(() => saving = true);
     final b = {
       'name': name.text.trim(),
@@ -392,10 +407,16 @@ class TaskDialogState extends State<TaskDialog> {
         await a.updateTask(widget.task!.id, b);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (mounted)
+      if (mounted && e is OfflineQueuedException) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+        Navigator.pop(context, true);
+      } else if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }

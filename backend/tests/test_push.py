@@ -2,8 +2,8 @@ from test_phase2_resources import register
 
 
 SUBSCRIPTION = {
-    "endpoint": "https://push.example.test/subscription/one",
-    "keys": {"p256dh": "p256dh-value", "auth": "auth-value"},
+    "endpoint": "https://fcm.googleapis.com/fcm/send/subscription-one",
+    "keys": {"p256dh": "A" * 87, "auth": "B" * 22},
 }
 
 
@@ -37,10 +37,10 @@ def test_subscription_can_be_registered_updated_and_deleted_by_owner(client):
     updated = client.patch(
         f'/api/v1/push/subscriptions/{subscription_id}',
         headers=owner,
-        json={'keys': {'p256dh': 'new-p256dh', 'auth': 'new-auth'}},
+        json={'keys': {'p256dh': 'C' * 87, 'auth': 'D' * 22}},
     )
     assert updated.status_code == 200, updated.text
-    assert updated.json()['keys'] == {'p256dh': 'new-p256dh', 'auth': 'new-auth'}
+    assert updated.json()['keys'] == {'p256dh': 'C' * 87, 'auth': 'D' * 22}
 
     assert client.get(f'/api/v1/push/subscriptions/{subscription_id}', headers=other).status_code == 404
     assert client.delete(f'/api/v1/push/subscriptions/{subscription_id}', headers=other).status_code == 404
@@ -56,6 +56,26 @@ def test_same_endpoint_cannot_be_taken_by_another_owner(client):
     response = client.post('/api/v1/push/subscriptions', headers=other, json=SUBSCRIPTION)
 
     assert response.status_code == 409
+
+
+def test_invalid_push_endpoint_and_keys_are_rejected(client):
+    owner = register(client, 'push-validation@example.com')
+    invalid = {
+        'endpoint': 'https://localhost/send/subscription',
+        'keys': {'p256dh': 'not-base64url!', 'auth': 'short'},
+    }
+    response = client.post('/api/v1/push/subscriptions', headers=owner, json=invalid)
+    assert response.status_code == 422
+
+
+def test_unsupported_push_provider_is_rejected(client):
+    owner = register(client, 'push-provider-validation@example.com')
+    invalid = {
+        'endpoint': 'https://push.example.test/subscription',
+        'keys': {'p256dh': 'A' * 87, 'auth': 'B' * 22},
+    }
+    response = client.post('/api/v1/push/subscriptions', headers=owner, json=invalid)
+    assert response.status_code == 422
 
 
 def test_send_web_push_is_disabled_without_private_configuration(monkeypatch):
@@ -81,4 +101,5 @@ def test_send_web_push_uses_configured_vapid_without_logging_private_key(monkeyp
     assert send_web_push(SUBSCRIPTION, {'title': 'hello'}) is True
     assert calls[0]['vapid_private_key'] == 'private-secret'
     assert calls[0]['vapid_claims'] == {'sub': 'mailto:farmer@example.com'}
+    assert calls[0]['timeout'] == 10
     assert 'private-secret' not in caplog.text

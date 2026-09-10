@@ -65,13 +65,18 @@ def get_transaction(i:uuid.UUID,identity=Depends(current_session),db:Session=Dep
 def update_transaction(i:uuid.UUID,b:TransactionPatch,identity=Depends(current_session),db:Session=Depends(get_db)):
     u=user(identity);t=owned(db,Transaction,u,i); ch=b.model_dump(exclude_unset=True,exclude={'fuel'})
     if 'cycle_id' in ch and ch['cycle_id'] is not None: cycle(db,u,ch['cycle_id'])
-    if 'type' in ch and ch['type']=='income' and (b.fuel is not None): raise HTTPException(422,'Fuel is only valid for expense')
+    if 'type' in ch and ch['type']=='income' and (b.fuel is not None or linked(db,t) is not None): raise HTTPException(422,'Fuel is only valid for expense')
     for k,v in ch.items(): setattr(t,k,v)
     f=linked(db,t)
     if b.fuel is not None:
         if t.type!='expense':raise HTTPException(422,'Fuel is only valid for expense')
         make_fuel(db,u,t,b.fuel,f)
-    elif 'fuel' in b.model_fields_set and f: db.delete(f)
+    elif 'fuel' in b.model_fields_set and f:
+        db.delete(f)
+    elif f:
+        f.amount=t.amount
+        f.date=t.date
+        f.details=t.item
     db.commit();db.refresh(t);return tx_out(t)
 @router.delete('/transactions/{i}',status_code=204)
 def delete_transaction(i:uuid.UUID,identity=Depends(current_session),db:Session=Depends(get_db)):

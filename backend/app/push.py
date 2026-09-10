@@ -1,5 +1,6 @@
 """Owner-scoped Web Push subscriptions and delivery."""
 import json
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -19,6 +20,7 @@ except ImportError:  # pragma: no cover - dependency is installed in deployment
 
 router = APIRouter(prefix='/api/v1/push')
 _bearer = HTTPBearer(auto_error=False)
+_logger = logging.getLogger(__name__)
 
 
 def current_push_session(
@@ -48,6 +50,7 @@ def send_web_push(subscription: dict, payload: dict) -> bool:
         data=json.dumps(payload),
         vapid_private_key=settings.vapid_private_key,
         vapid_claims={'sub': settings.vapid_subject},
+        timeout=10,
     )
     return True
 
@@ -58,8 +61,17 @@ def send_to_owner(db: Session, owner_id: uuid.UUID, payload: dict) -> int:
         return 0
     sent = 0
     for subscription in db.scalars(select(PushSubscription).where(PushSubscription.owner_id == owner_id)):
-        send_web_push({'endpoint': subscription.endpoint, 'keys': {'p256dh': subscription.p256dh, 'auth': subscription.auth}}, payload)
-        sent += 1
+        try:
+            delivered = send_web_push({'endpoint': subscription.endpoint, 'keys': {'p256dh': subscription.p256dh, 'auth': subscription.auth}}, payload)
+        except Exception as exc:  # noqa: BLE001 - one provider must not stop other subscriptions
+            status_code = getattr(getattr(exc, 'response', None), 'status_code', None)
+            if status_code in {404, 410}:
+                db.delete(subscription)
+            _logger.warning('web push delivery failed for subscription %s: %s', subscription.id, type(exc).__name__)
+            continue
+        if delivered:
+            sent += 1
+    db.commit()
     return sent
 
 

@@ -3,9 +3,12 @@
 android/build/
 error.text
 
+deploy/staging/.env
+deploy/staging/web/
 .env
 .env.*
 !.env.example
+
 *.pem
 *.key
 *.p12

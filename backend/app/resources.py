@@ -17,6 +17,15 @@ def owned(db, model, ident, item_id):
     if item is None: missing()
     return item
 
+def locked_cycle(db, ident, item_id):
+    item = db.scalar(select(ProductionCycle).where(
+        ProductionCycle.id == item_id,
+        ProductionCycle.owner_id == ident.id,
+    ).with_for_update())
+    if item is None:
+        missing()
+    return item
+
 def plot_out(p): return PlotOut.model_validate(p)
 def cycle_out(db, c):
     p = db.get(Plot, c.plot_id)
@@ -73,8 +82,8 @@ def list_activities(limit: int=Query(50), offset: int=Query(0), cycle_id: uuid.U
     return [activity_out(x) for x in db.scalars(q.order_by(desc(Activity.date),desc(Activity.id)).limit(limit).offset(offset))]
 @router.post('/activities', status_code=201, response_model=ActivityOut)
 def create_activity(body: ActivityCreate, identity=Depends(current_session), db: Session=Depends(get_db)):
-    u=identity_user(identity); c=owned(db,ProductionCycle,u,body.cycle_id)
-    if c.status=='completed' and not body.complete_cycle: raise HTTPException(409,'Cycle is completed')
+    u=identity_user(identity); c=locked_cycle(db,u,body.cycle_id)
+    if c.status=='completed': raise HTTPException(409,'Cycle is completed')
     a=Activity(owner_id=u.id, **body.model_dump(exclude={'complete_cycle','image_url'})); db.add(a)
     if body.complete_cycle: c.status='completed'
     db.commit(); db.refresh(a); return activity_out(a)
@@ -82,14 +91,18 @@ def create_activity(body: ActivityCreate, identity=Depends(current_session), db:
 def get_activity(item_id: uuid.UUID, identity=Depends(current_session), db: Session=Depends(get_db)): return activity_out(owned(db,Activity,identity_user(identity),item_id))
 @router.patch('/activities/{item_id}', response_model=ActivityOut)
 def update_activity(item_id: uuid.UUID, body: ActivityPatch, identity=Depends(current_session), db: Session=Depends(get_db)):
-    a=owned(db,Activity,identity_user(identity),item_id); c=owned(db,ProductionCycle,identity_user(identity),a.cycle_id)
+    u=identity_user(identity); a=owned(db,Activity,u,item_id); c=locked_cycle(db,u,a.cycle_id)
     if c.status=='completed': raise HTTPException(409,'Cycle is completed')
     changes=body.model_dump(exclude_unset=True, exclude={'image_url'})
-    if 'cycle_id' in changes: owned(db,ProductionCycle,identity_user(identity),changes['cycle_id'])
+    if 'cycle_id' in changes and changes['cycle_id'] != a.cycle_id:
+        raise HTTPException(409, 'Moving an activity between cycles is not supported')
+    if 'cycle_id' in changes:
+        target_cycle = locked_cycle(db,u,changes['cycle_id'])
+        if target_cycle.status=='completed': raise HTTPException(409,'Cycle is completed')
     for k,v in changes.items(): setattr(a,k,v)
     db.commit(); db.refresh(a); return activity_out(a)
 @router.delete('/activities/{item_id}', status_code=204)
 def delete_activity(item_id: uuid.UUID, identity=Depends(current_session), db: Session=Depends(get_db)):
-    a=owned(db,Activity,identity_user(identity),item_id); c=owned(db,ProductionCycle,identity_user(identity),a.cycle_id)
+    u=identity_user(identity); a=owned(db,Activity,u,item_id); c=locked_cycle(db,u,a.cycle_id)
     if c.status=='completed': raise HTTPException(409,'Cycle is completed')
     db.delete(a); db.commit(); return Response(status_code=204)

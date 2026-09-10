@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -27,7 +28,10 @@ class SharedPreferencesOfflineQueueStore implements OfflineQueueStore {
   }
 
   @override
-  Future<void> write(List<Map<String, dynamic>> values, {String? userId}) async {
+  Future<void> write(
+    List<Map<String, dynamic>> values, {
+    String? userId,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key(userId), jsonEncode(values));
   }
@@ -41,8 +45,12 @@ class MemoryOfflineQueueStore implements OfflineQueueStore {
     final source = userId == null ? values : (_byUser[userId] ?? const []);
     return source.map(Map<String, dynamic>.from).toList();
   }
+
   @override
-  Future<void> write(List<Map<String, dynamic>> values, {String? userId}) async {
+  Future<void> write(
+    List<Map<String, dynamic>> values, {
+    String? userId,
+  }) async {
     final copy = values.map(Map<String, dynamic>.from).toList();
     if (userId == null) {
       this.values = copy;
@@ -105,8 +113,22 @@ class OfflineQueueEntry {
 
 class OfflineQueue {
   final OfflineQueueStore store;
+  static Future<void> _operationTail = Future<void>.value();
+
   OfflineQueue({OfflineQueueStore? store})
     : store = store ?? SharedPreferencesOfflineQueueStore();
+
+  Future<T> _serialized<T>(Future<T> Function() operation) async {
+    final previous = _operationTail;
+    final completed = Completer<void>();
+    _operationTail = completed.future;
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      completed.complete();
+    }
+  }
 
   Future<List<OfflineQueueEntry>> entriesForUser(String userId) async =>
       (await store.read(userId: userId))
@@ -115,9 +137,11 @@ class OfflineQueue {
           .toList();
 
   Future<void> enqueue(OfflineQueueEntry entry) async {
-    final all = await store.read(userId: entry.userId);
-    all.add(entry.toJson());
-    await store.write(all, userId: entry.userId);
+    await _serialized(() async {
+      final all = await store.read(userId: entry.userId);
+      all.add(entry.toJson());
+      await store.write(all, userId: entry.userId);
+    });
   }
 
   Future<void> flush(
@@ -125,38 +149,40 @@ class OfflineQueue {
     Future<void> Function(OfflineQueueEntry) replay, {
     bool Function(Object error)? isBlocked,
   }) async {
-    final all = (await store.read(userId: userId))
-        .map(OfflineQueueEntry.fromJson)
-        .toList();
-    for (final entry
-        in all
-            .where((e) => e.userId == userId && e.status == 'pending')
-            .toList()) {
-      try {
-        await replay(entry);
-        all.removeWhere((e) => e.id == entry.id);
-      } catch (e) {
-        final i = all.indexWhere((x) => x.id == entry.id);
-        all[i] = OfflineQueueEntry(
-          id: entry.id,
-          userId: entry.userId,
-          method: entry.method,
-          path: entry.path,
-          body: entry.body,
-          idempotencyKey: entry.idempotencyKey,
-          createdAt: entry.createdAt,
-          lastError: e.toString(),
-          status:
-              isBlocked?.call(e) == true ||
-                  e.toString().contains(RegExp(r'\b(401|403|422)\b'))
-              ? 'blocked'
-              : 'pending',
-        );
-        if (all[i].status == 'blocked') break;
-        if (e is! Exception) rethrow;
+    await _serialized(() async {
+      final all = (await store.read(
+        userId: userId,
+      )).map(OfflineQueueEntry.fromJson).toList();
+      for (final entry
+          in all
+              .where((e) => e.userId == userId && e.status == 'pending')
+              .toList()) {
+        try {
+          await replay(entry);
+          all.removeWhere((e) => e.id == entry.id);
+        } catch (e) {
+          final i = all.indexWhere((x) => x.id == entry.id);
+          all[i] = OfflineQueueEntry(
+            id: entry.id,
+            userId: entry.userId,
+            method: entry.method,
+            path: entry.path,
+            body: entry.body,
+            idempotencyKey: entry.idempotencyKey,
+            createdAt: entry.createdAt,
+            lastError: e.toString(),
+            status:
+                isBlocked?.call(e) == true ||
+                    e.toString().contains(RegExp(r'\b(401|403|422)\b'))
+                ? 'blocked'
+                : 'pending',
+          );
+          if (all[i].status == 'blocked') break;
+          if (e is! Exception) rethrow;
+        }
       }
-    }
-    await store.write(all.map((e) => e.toJson()).toList(), userId: userId);
+      await store.write(all.map((e) => e.toJson()).toList(), userId: userId);
+    });
   }
 }
 
