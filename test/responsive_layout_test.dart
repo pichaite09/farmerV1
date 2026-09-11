@@ -23,10 +23,10 @@ void main() {
                     isScrollable: true,
                     tabAlignment: TabAlignment.start,
                     tabs: [
+                      Tab(text: 'รอบผลิต'),
                       Tab(text: 'กิจกรรม'),
                       Tab(text: 'ตรวจแปลง'),
                       Tab(text: 'ตารางงาน'),
-                      Tab(text: 'รอบผลิต'),
                       Tab(text: 'แปลงเกษตร'),
                     ],
                   ),

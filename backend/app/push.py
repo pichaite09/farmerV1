@@ -6,13 +6,13 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, settings
-from app.models import Notification, PushOutbox, PushSubscription, Task
+from app.models import Notification, PushOutbox, PushSubscription, Task, User, Announcement, AnnouncementRecipient
 from app.schemas import PushSubscriptionCreate, PushSubscriptionOut, PushSubscriptionPatch
 
 try:
@@ -28,8 +28,8 @@ MAX_ATTEMPTS = 5
 
 
 def current_push_session(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer), db: Session = Depends(get_db)):
-    from app.main import current_session
-    return current_session(credentials, db)
+    from app.main import farmer_session
+    return farmer_session(credentials, db)
 
 
 def _out(subscription: PushSubscription) -> PushSubscriptionOut:
@@ -54,6 +54,9 @@ def send_web_push(subscription: dict, payload: dict) -> bool:
 def send_to_owner(db: Session, owner_id: uuid.UUID, payload: dict) -> int:
     """Compatibility helper for callers that need immediate fan-out."""
     sent = 0
+    owner = db.scalar(select(User).where(User.id == owner_id))
+    if owner is None or owner.status != 'active':
+        return 0
     subscriptions = db.scalars(select(PushSubscription).where(PushSubscription.owner_id == owner_id)).all()
     for subscription in subscriptions:
         try:
@@ -68,9 +71,9 @@ def send_to_owner(db: Session, owner_id: uuid.UUID, payload: dict) -> int:
     return sent
 
 
-def enqueue_push_outbox(db: Session, notifications: list[Notification] | None = None, owner_id: uuid.UUID | None = None) -> int:
+def enqueue_push_outbox(db: Session, notifications: list[Notification] | None = None, owner_id: uuid.UUID | None = None, commit: bool = True) -> int:
     """Enqueue one idempotent delivery per notification and current subscription."""
-    query = select(Notification).where(Notification.kind == 'task_due_tomorrow')
+    query = select(Notification).where(Notification.kind.in_(['task_due_tomorrow', 'admin_announcement']))
     if notifications is not None:
         ids = [n.id for n in notifications]
         if not ids:
@@ -80,13 +83,25 @@ def enqueue_push_outbox(db: Session, notifications: list[Notification] | None = 
         query = query.where(Notification.owner_id == owner_id)
     rows = db.scalars(query).all()
     added = 0
+    announcement_ids = set()
     for notification in rows:
-        task = db.get(Task, notification.task_id)
-        if task is None or task.status in {'completed', 'cancelled'} or notification.dismissed_at is not None:
+        task = db.get(Task, notification.task_id) if notification.task_id else None
+        announcement = db.get(Announcement, notification.announcement_id) if notification.announcement_id else None
+        if notification.announcement_id:
+            announcement_ids.add(notification.announcement_id)
+        if (notification.kind == 'task_due_tomorrow' and (task is None or task.status in {'completed', 'cancelled'})) or (notification.kind == 'admin_announcement' and (announcement is None or announcement.status == 'cancelled')) or notification.dismissed_at is not None:
             continue
         payload = {'notificationId': str(notification.id), 'title': notification.title,
                    'body': notification.body, 'url': '/#/notifications'}
-        subscriptions = db.scalars(select(PushSubscription).where(PushSubscription.owner_id == notification.owner_id)).all()
+        subscriptions = db.scalars(select(PushSubscription).join(User, User.id == PushSubscription.owner_id).where(
+            PushSubscription.owner_id == notification.owner_id, User.status == 'active',
+        )).all()
+        if notification.announcement_id and not subscriptions:
+            db.execute(update(AnnouncementRecipient).where(
+                AnnouncementRecipient.announcement_id == notification.announcement_id,
+                AnnouncementRecipient.user_id == notification.owner_id,
+                AnnouncementRecipient.status == 'pending',
+            ).values(status='suppressed'))
         for subscription in subscriptions:
             result = db.execute(insert(PushOutbox).values(
                 owner_id=notification.owner_id, notification_id=notification.id,
@@ -95,7 +110,16 @@ def enqueue_push_outbox(db: Session, notifications: list[Notification] | None = 
              .returning(PushOutbox.id))
             # PostgreSQL reports -1 for rowcount when RETURNING is used.
             added += len(result.scalars().all())
-    db.commit()
+    now = datetime.now(timezone.utc)
+    for announcement_id in announcement_ids:
+        pending = db.scalar(select(func.count()).select_from(AnnouncementRecipient).where(
+            AnnouncementRecipient.announcement_id == announcement_id,
+            AnnouncementRecipient.status == 'pending',
+        ))
+        if not pending:
+            _update_announcement_lifecycle(db, announcement_id, now)
+    if commit:
+        db.commit()
     return added
 
 
@@ -114,6 +138,9 @@ def claim_push_outbox(db: Session, limit: int = 100, now: datetime | None = None
         row.status = 'claimed'
         row.claimed_at = now
         row.attempts += 1
+        notification = db.get(Notification, row.notification_id)
+        if notification is not None and notification.announcement_id:
+            _update_announcement_lifecycle(db, notification.announcement_id, now)
     db.commit()
     return rows
 
@@ -129,9 +156,30 @@ def deliver_claimed(db: Session, rows: list[PushOutbox], now: datetime | None = 
     for row in rows:
         subscription = db.get(PushSubscription, row.subscription_id)
         notification = db.get(Notification, row.notification_id)
-        task = db.get(Task, notification.task_id) if notification is not None else None
-        if notification is None or task is None or task.status in {'completed', 'cancelled'} or notification.dismissed_at is not None:
+        owner = db.scalar(select(User).where(User.id == row.owner_id).with_for_update())
+        if owner is None or owner.status != 'active':
+            if notification is not None and notification.announcement_id:
+                db.execute(update(AnnouncementRecipient).where(
+                    AnnouncementRecipient.announcement_id == notification.announcement_id,
+                    AnnouncementRecipient.user_id == row.owner_id,
+                    AnnouncementRecipient.status == 'pending',
+                ).values(status='suppressed'))
             row.status, row.claimed_at, row.last_error = 'failed', None, 'suppressed'
+            if notification is not None and notification.announcement_id:
+                _update_announcement_lifecycle(db, notification.announcement_id, now)
+            db.commit()
+            failed += 1
+            continue
+        task = db.get(Task, notification.task_id) if notification is not None and notification.task_id else None
+        announcement = db.get(Announcement, notification.announcement_id) if notification is not None and notification.announcement_id else None
+        if announcement is not None:
+            announcement = db.scalar(select(Announcement).where(Announcement.id == announcement.id).with_for_update())
+        if notification is None or (notification.kind == 'task_due_tomorrow' and (task is None or task.status in {'completed', 'cancelled'})) or (notification.kind == 'admin_announcement' and (announcement is None or announcement.status == 'cancelled')) or notification.dismissed_at is not None:
+            if notification is not None and notification.announcement_id:
+                db.execute(update(AnnouncementRecipient).where(AnnouncementRecipient.announcement_id == notification.announcement_id, AnnouncementRecipient.user_id == notification.owner_id).values(status='suppressed'))
+            row.status, row.claimed_at, row.last_error = 'failed', None, 'suppressed'
+            if notification is not None and notification.announcement_id:
+                _update_announcement_lifecycle(db, notification.announcement_id, now)
             db.commit()
             failed += 1
             continue
@@ -158,8 +206,56 @@ def deliver_claimed(db: Session, rows: list[PushOutbox], now: datetime | None = 
         else:
             row.status, row.sent_at, row.claimed_at = 'sent', now, None
             sent += 1
+        _update_announcement_lifecycle(db, notification.announcement_id, now) if notification is not None and notification.announcement_id else None
         db.commit()
     return sent, failed
+
+
+def _update_announcement_lifecycle(db: Session, announcement_id: uuid.UUID, now: datetime) -> None:
+    """Set sending/sent/completed from terminal states without reviving cancel."""
+    announcement = db.get(Announcement, announcement_id)
+    if announcement is None or announcement.status == 'cancelled':
+        return
+    recipients = db.scalars(select(AnnouncementRecipient).where(
+        AnnouncementRecipient.announcement_id == announcement_id,
+    )).all()
+    for recipient in recipients:
+        _update_announcement_recipient(db, recipient)
+    statuses = [recipient.status for recipient in recipients]
+    outbox_statuses = db.scalars(select(PushOutbox.status).join(
+        Notification, Notification.id == PushOutbox.notification_id,
+    ).where(Notification.announcement_id == announcement_id)).all()
+    if announcement.status in {'sent', 'completed'}:
+        return
+    if any(status in {'pending', 'claimed'} for status in outbox_statuses):
+        announcement.status = 'sending'
+    elif statuses and all(status in {'sent', 'failed', 'suppressed'} for status in statuses):
+        # ``sent`` means at least one provider delivery succeeded. A campaign
+        # whose recipients all lacked subscriptions or permanently failed has
+        # completed, but was not sent.
+        if 'sent' in statuses:
+            announcement.status, announcement.sent_at = 'sent', announcement.sent_at or now
+        else:
+            announcement.status = 'completed'
+
+
+def _update_announcement_recipient(db: Session, recipient: AnnouncementRecipient) -> None:
+    """Recompute one recipient from every subscription delivery for its user."""
+    outboxes = db.scalars(select(PushOutbox).join(
+        Notification, Notification.id == PushOutbox.notification_id,
+    ).where(
+        Notification.announcement_id == recipient.announcement_id,
+        PushOutbox.owner_id == recipient.user_id,
+    )).all()
+    if not outboxes:
+        return
+    statuses = {outbox.status for outbox in outboxes}
+    if statuses & {'pending', 'claimed'}:
+        recipient.status = 'pending'
+    elif 'sent' in statuses:
+        recipient.status = 'sent'
+    elif recipient.status != 'suppressed':
+        recipient.status = 'failed'
 
 
 def _owned(db: Session, owner_id: uuid.UUID, subscription_id: uuid.UUID):

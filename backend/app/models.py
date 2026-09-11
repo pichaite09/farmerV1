@@ -7,7 +7,7 @@ from app.database import Base
 
 class User(Base):
     __tablename__ = 'users'
-    __table_args__ = (CheckConstraint("role = 'farmer'", name='users_farmer_only'),)
+    __table_args__ = (CheckConstraint("role IN ('farmer', 'admin')", name='users_role_valid'),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), unique=True)
     first_name: Mapped[str | None] = mapped_column(String(100))
@@ -20,6 +20,7 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(String(30))
     password_hash: Mapped[str] = mapped_column(String(512))
     role: Mapped[str] = mapped_column(String(16), default='farmer')
+    status: Mapped[str] = mapped_column(String(16), default='active', server_default='active')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class AuthSession(Base):
@@ -29,6 +30,18 @@ class AuthSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+class AuditLog(Base):
+    __tablename__ = 'audit_logs'
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    # Audit history must retain its actor identity; deleting an actor is
+    # rejected while their audit rows exist.
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    target_type: Mapped[str] = mapped_column(String(64), index=True)
+    target_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
+    metadata_json: Mapped[dict] = mapped_column('metadata', JSON, default=dict, server_default='{}')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 class AuthThrottle(Base):
     __tablename__ = 'auth_throttles'
@@ -134,13 +147,39 @@ class PushSubscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+class Announcement(Base):
+    __tablename__ = 'announcements'
+    __table_args__ = (CheckConstraint("status IN ('draft', 'queued', 'sending', 'sent', 'completed', 'cancelled')", name='ck_announcements_status'),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    target_type: Mapped[str] = mapped_column(String(16))
+    target_role: Mapped[str | None] = mapped_column(String(16))
+    target_user_ids: Mapped[list | None] = mapped_column(JSON)
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default='draft', server_default='draft', index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+class AnnouncementRecipient(Base):
+    __tablename__ = 'announcement_recipients'
+    __table_args__ = (UniqueConstraint('announcement_id', 'user_id', name='uq_announcement_recipient'), CheckConstraint("status IN ('pending', 'sent', 'failed', 'suppressed')", name='ck_announcement_recipient_status'))
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    announcement_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('announcements.id', ondelete='CASCADE'), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    status: Mapped[str] = mapped_column(String(16), default='pending', server_default='pending')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 class Notification(Base):
     __tablename__ = 'notifications'
     __table_args__ = (UniqueConstraint('owner_id', 'task_id', 'due_date', name='uq_notification_owner_task_due_date'),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
-    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('tasks.id', ondelete='CASCADE'), index=True)
-    due_date: Mapped[date] = mapped_column(Date)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('tasks.id', ondelete='CASCADE'), index=True)
+    due_date: Mapped[date | None] = mapped_column(Date)
+    announcement_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('announcements.id', ondelete='CASCADE'), index=True)
     kind: Mapped[str] = mapped_column(String(64))
     title: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text)

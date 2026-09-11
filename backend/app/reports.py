@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from uuid import UUID
 from app.database import get_db
-from app.main import current_session
+from app.main import farmer_session
 from app.models import Transaction, FuelRecord, Vehicle, Plot, ProductionCycle, Activity, Task, FieldInspection
 from app.phase3 import DEFAULTS, user
 router=APIRouter(prefix='/api/v1')
@@ -13,7 +13,7 @@ def bounds(frm,to):
     if frm and to and frm>to: raise HTTPException(422,'from must not exceed to')
 
 @router.get('/dashboard')
-def dashboard(frm:date|None=Query(None,alias='from'),to:date|None=Query(None),identity=Depends(current_session),db:Session=Depends(get_db)):
+def dashboard(frm:date|None=Query(None,alias='from'),to:date|None=Query(None),identity=Depends(farmer_session),db:Session=Depends(get_db)):
     bounds(frm,to)
     owner_id=user(identity).id
     today=date.today()
@@ -44,7 +44,7 @@ def dashboard(frm:date|None=Query(None,alias='from'),to:date|None=Query(None),id
     if fuel_spend: bycat['น้ำมันเชื้อเพลิง']=bycat.get('น้ำมันเชื้อเพลิง',Decimal('0'))+fuel_spend
     return {'plots':len(plots),'totalArea':sum((x.area for x in plots),Decimal('0')),'activeCycles':len(active),'income':income,'expense':expense,'profit':income-expense,'fuelSpend':fuel_spend,'expenseByCategory':[{'category':k,'amount':v} for k,v in bycat.items()],'recentTasks':[{'id':x.id,'name':x.name,'cycleId':x.cycle_id,'plotName':plot_name(x.cycle_id),'dueDate':x.due_date,'status':x.status,'description':x.description,'createdAt':x.created_at} for x in recent_tasks],'recentInspections':[{'id':x.id,'cycleId':x.cycle_id,'plotName':plot_name(x.cycle_id),'cycleName':cycles_by_id.get(x.cycle_id).name if x.cycle_id in cycles_by_id else None,'inspectionDate':x.inspection_date,'overallStatus':x.overall_status,'notes':x.notes,'createdAt':x.created_at} for x in recent_inspections],'recentActivities':[{'id':x.id,'cycleId':x.cycle_id,'plotName':plot_name(x.cycle_id),'type':x.type,'description':x.description,'date':x.date,'createdAt':x.created_at} for x in activities],'recentTransactions':[{'id':x.id,'type':x.type,'category':x.category,'item':x.item,'amount':x.amount,'date':x.date,'plotName':plot_name(x.cycle_id),'createdAt':x.created_at} for x in recent_tx],'recentFuelRecords':[{'id':x.id,'vehicleId':x.vehicle_id,'vehicleName':vehicles_by_id.get(x.vehicle_id,'ไม่พบยานพาหนะ'),'date':x.date,'fuelType':x.fuel_type,'amount':x.amount,'details':x.details} for x in fuel_rows]}
 @router.get('/reports/production-cycles/summary')
-def production_cycle_summary(frm:date|None=Query(None,alias='from'),to:date|None=Query(None),identity=Depends(current_session),db:Session=Depends(get_db)):
+def production_cycle_summary(frm:date|None=Query(None,alias='from'),to:date|None=Query(None),identity=Depends(farmer_session),db:Session=Depends(get_db)):
     bounds(frm,to)
     owner_id=user(identity).id
     cycles=db.scalars(select(ProductionCycle).where(ProductionCycle.owner_id==owner_id).order_by(ProductionCycle.start_date.desc(),ProductionCycle.id.desc())).all()
@@ -124,7 +124,7 @@ def production_cycle_summary(frm:date|None=Query(None,alias='from'),to:date|None
     return summaries
 
 @router.get('/reports/finance')
-def finance(frm:date|None=Query(None,alias='from'),to:date|None=Query(None),cycle_id:UUID|None=None,identity=Depends(current_session),db:Session=Depends(get_db)):
+def finance(frm:date|None=Query(None,alias='from'),to:date|None=Query(None),cycle_id:UUID|None=None,identity=Depends(farmer_session),db:Session=Depends(get_db)):
     bounds(frm,to)
     q=select(Transaction).where(Transaction.owner_id==user(identity).id)
     if frm:q=q.where(Transaction.date>=frm)
@@ -137,7 +137,7 @@ def finance(frm:date|None=Query(None,alias='from'),to:date|None=Query(None),cycl
         ck=str(x.cycle_id) if x.cycle_id else None;bycycle[ck]=bycycle.get(ck,Decimal('0'))+x.amount
     return {'income':income,'expense':expense,'profit':income-expense,'byCategory':[{'category':k,'amount':v} for k,v in bycat.items()],'byCycle':[{'cycleId':k,'amount':v} for k,v in bycycle.items()]}
 @router.get('/reports/fuel')
-def fuel(frm:date|None=Query(None,alias='from'),to:date|None=Query(None),vehicle_id:UUID|None=None,identity=Depends(current_session),db:Session=Depends(get_db)):
+def fuel(frm:date|None=Query(None,alias='from'),to:date|None=Query(None),vehicle_id:UUID|None=None,identity=Depends(farmer_session),db:Session=Depends(get_db)):
     bounds(frm,to)
     q=select(FuelRecord).where(FuelRecord.owner_id==user(identity).id)
     if frm:q=q.where(FuelRecord.date>=frm)

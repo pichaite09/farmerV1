@@ -3,12 +3,25 @@ import uuid
 from datetime import date as DateType, datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, field_validator
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 import ipaddress
 import re
 class APIModel(BaseModel):
     model_config=ConfigDict(alias_generator=lambda s: ''.join([s.split('_')[0]]+[p.title() for p in s.split('_')[1:]]),populate_by_name=True,from_attributes=True,extra='forbid')
+
+class AdminDashboardCounts(APIModel):
+    users: int
+    plots: int
+    cycles: int
+    activities: int
+    tasks: int
+    notifications: int
+
+class AdminDashboardOut(APIModel):
+    from_date: DateType | None = None
+    to: DateType | None = None
+    counts: AdminDashboardCounts
 
 def _push_endpoint(value: str) -> str:
     parsed = urlsplit(value)
@@ -219,7 +232,32 @@ class TaskOut(APIModel):
     field_inspection_id: uuid.UUID | None = None
     is_automatic_follow_up: bool = False
 class NotificationOut(APIModel):
-    id:uuid.UUID;task_id:uuid.UUID;task_name:str;cycle_name:str;plot_name:str;due_date:DateType;kind:str;title:str;body:str;created_at:datetime;read_at:datetime|None
+    id:uuid.UUID;task_id:uuid.UUID|None;task_name:str|None=None;cycle_name:str|None=None;plot_name:str|None=None;due_date:DateType|None;kind:str;title:str;body:str;created_at:datetime;read_at:datetime|None
+
+class AnnouncementCreate(APIModel):
+    title: str
+    body: str
+    target_type: Literal['all', 'selected', 'role']
+    user_ids: list[uuid.UUID] = []
+    role: Literal['farmer'] | None = None
+    @field_validator('title', 'body')
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip(): raise ValueError('must not be blank')
+        return value.strip()
+    @field_validator('user_ids')
+    @classmethod
+    def unique_ids(cls, value):
+        if len(value) != len(set(value)): raise ValueError('userIds must be unique')
+        return value
+
+AnnouncementStatus = Literal['draft', 'queued', 'sending', 'sent', 'completed', 'cancelled']
+
+class AnnouncementOut(APIModel):
+    id: uuid.UUID;owner_id: uuid.UUID;target_type: str;target_role: str|None;title: str;body: str;status: AnnouncementStatus;created_at: datetime;queued_at: datetime|None;sent_at: datetime|None;cancelled_at: datetime|None;target_count: int|None=None
+
+class AnnouncementSummaryOut(APIModel):
+    announcement_id: uuid.UUID;status: AnnouncementStatus;total: int;pending: int;sent: int;failed: int;suppressed: int
 class PushSubscriptionKeys(APIModel):
     p256dh: str
     auth: str
@@ -257,3 +295,23 @@ class PushSubscriptionOut(APIModel):
 class CategoriesOut(APIModel):
     activity_categories:list[str];expense_categories:list[str];income_categories:list[str];soil_types:list[str];planting_types:list[str];crop_types:list[str];vehicle_categories:list[str]
 class CategoryUpdate(APIModel): values:list[str]
+
+class AdminUserPatch(APIModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    birth_date: DateType | None = None
+    house_number: str | None = None
+    subdistrict: str | None = None
+    district: str | None = None
+    province: str | None = None
+    phone: str | None = None
+    role: Literal['farmer', 'admin'] | None = None
+
+class AuditLogOut(APIModel):
+    id: uuid.UUID
+    actor_id: uuid.UUID | None
+    action: str
+    target_type: str
+    target_id: uuid.UUID | None
+    metadata: dict[str, Any]
+    created_at: datetime

@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, settings
-from app.main import current_session
+from app.main import farmer_session
 from app.models import Activity, Attachment, FieldInspection, Plot, ProductionCycle, Task
 
 router = APIRouter(prefix='/api/v1')
@@ -103,7 +103,7 @@ def upload_attachment(
     parent_id: uuid.UUID = Form(..., alias='parentId'),
     file: UploadFile = File(...),
     idempotency_key: str | None = Header(None, alias='Idempotency-Key', max_length=255),
-    identity=Depends(current_session),
+    identity=Depends(farmer_session),
     db: Session = Depends(get_db),
 ):
     # Fixed multipart fields; filenames are never used as storage identifiers.
@@ -207,7 +207,7 @@ def upload_attachment(
 def list_attachments(
     parent_type: str = Query(..., alias='parentType'),
     parent_id: uuid.UUID = Query(..., alias='parentId'),
-    identity=Depends(current_session),
+    identity=Depends(farmer_session),
     db: Session = Depends(get_db),
 ):
     parent_type = parent_type.strip().lower()
@@ -217,7 +217,7 @@ def list_attachments(
 
 
 @router.get('/attachments/{attachment_id}/content')
-def attachment_content(attachment_id: uuid.UUID, identity=Depends(current_session), db: Session = Depends(get_db)):
+def attachment_content(attachment_id: uuid.UUID, identity=Depends(farmer_session), db: Session = Depends(get_db)):
     row = db.scalar(select(Attachment).where(Attachment.id == attachment_id, Attachment.owner_id == _user(identity).id))
     if row is None:
         _not_found()
@@ -228,7 +228,7 @@ def attachment_content(attachment_id: uuid.UUID, identity=Depends(current_sessio
 
 
 @router.delete('/attachments/{attachment_id}', status_code=204)
-def delete_attachment(attachment_id: uuid.UUID, identity=Depends(current_session), db: Session = Depends(get_db)):
+def delete_attachment(attachment_id: uuid.UUID, identity=Depends(farmer_session), db: Session = Depends(get_db)):
     row = db.scalar(select(Attachment).where(Attachment.id == attachment_id, Attachment.owner_id == _user(identity).id))
     if row is None:
         _not_found()

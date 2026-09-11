@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone, timedelta
 import uuid
+from typing import Literal
 import jwt
 from argon2 import PasswordHasher
 from fastapi import FastAPI, Depends, HTTPException, Response, Request
@@ -39,7 +40,7 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     email: str
-    role: str
+    role: Literal['farmer', 'admin']
     first_name: str | None = None
     last_name: str | None = None
     birth_date: date | None = None
@@ -113,9 +114,20 @@ def current_session(credentials: HTTPAuthorizationCredentials | None = Depends(b
     if session is None or session.user_id != user_id or session.revoked_at is not None or session.expires_at <= datetime.now(timezone.utc):
         raise unauthorized()
     user = db.get(User, user_id)
-    if user is None or user.role != 'farmer':
+    if user is None or user.role not in ('farmer', 'admin') or user.status != 'active':
         raise unauthorized()
     return session, user
+
+def farmer_session(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)):
+    identity = current_session(credentials, db)
+    if identity[1].role != 'farmer':
+        raise HTTPException(403, 'Farmer access required')
+    return identity
+
+def admin_session(identity=Depends(current_session)):
+    if identity[1].role != 'admin':
+        raise HTTPException(403, 'Admin access required')
+    return identity
 
 
 @app.post('/api/v1/auth/login', response_model=TokenResponse)
@@ -126,7 +138,7 @@ def login(body: Credentials, request: Request, db: Session = Depends(get_db)):
         password_hasher.verify(user.password_hash if user else dummy_hash, body.password)
     except (VerifyMismatchError, VerificationError):
         raise unauthorized()
-    if user is None or user.role != "farmer":
+    if user is None or user.role not in ('farmer', 'admin') or user.status != 'active':
         raise unauthorized()
     return issue_session(user, db)
 
@@ -160,7 +172,7 @@ def live():
 def ready():
     try:
         with engine.connect() as conn:
-            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0016_cancelled_task_status'
+            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0021_announcement_completed'
             conn.execute(text('SELECT id FROM users LIMIT 1'))
     except Exception:
         raise HTTPException(503, 'Database not ready')
@@ -180,3 +192,5 @@ from app.push import router as push_router
 app.include_router(push_router)
 from app.field_inspections import router as field_inspections_router
 app.include_router(field_inspections_router)
+from app.admin import router as admin_router
+app.include_router(admin_router)

@@ -4,7 +4,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.main import current_session
+from app.main import farmer_session
 from app.models import FieldInspection, Plot, ProductionCycle
 from app.schemas import FieldInspectionCreate, FieldInspectionOut, FieldInspectionPatch
 from app.follow_up import follow_up_status, sync_follow_up_task
@@ -47,7 +47,7 @@ def list_field_inspections(
     offset: int = Query(0),
     plot_id: uuid.UUID | None = Query(None, alias='plotId'),
     cycle_id: uuid.UUID | None = Query(None, alias='cycleId'),
-    identity=Depends(current_session),
+    identity=Depends(farmer_session),
     db: Session = Depends(get_db),
 ):
     if limit < 1 or limit > 200 or offset < 0:
@@ -62,7 +62,7 @@ def list_field_inspections(
 
 
 @router.post('/field-inspections', status_code=201, response_model=FieldInspectionOut)
-def create_field_inspection(body: FieldInspectionCreate, identity=Depends(current_session), db: Session = Depends(get_db)):
+def create_field_inspection(body: FieldInspectionCreate, identity=Depends(farmer_session), db: Session = Depends(get_db)):
     owner = user(identity)
     validate_parent_links(db, owner, body.plot_id, body.cycle_id)
     row = FieldInspection(owner_id=owner.id, **body.model_dump())
@@ -74,12 +74,12 @@ def create_field_inspection(body: FieldInspectionCreate, identity=Depends(curren
 
 
 @router.get('/field-inspections/{item_id}', response_model=FieldInspectionOut)
-def get_field_inspection(item_id: uuid.UUID, identity=Depends(current_session), db: Session = Depends(get_db)):
+def get_field_inspection(item_id: uuid.UUID, identity=Depends(farmer_session), db: Session = Depends(get_db)):
     return out(db, owned(db, FieldInspection, user(identity), item_id))
 
 
 @router.patch('/field-inspections/{item_id}', response_model=FieldInspectionOut)
-def patch_field_inspection(item_id: uuid.UUID, body: FieldInspectionPatch, identity=Depends(current_session), db: Session = Depends(get_db)):
+def patch_field_inspection(item_id: uuid.UUID, body: FieldInspectionPatch, identity=Depends(farmer_session), db: Session = Depends(get_db)):
     owner = user(identity)
     row = owned(db, FieldInspection, owner, item_id)
     changes = body.model_dump(exclude_unset=True)
@@ -95,7 +95,7 @@ def patch_field_inspection(item_id: uuid.UUID, body: FieldInspectionPatch, ident
 
 
 @router.delete('/field-inspections/{item_id}', status_code=204)
-def delete_field_inspection(item_id: uuid.UUID, identity=Depends(current_session), db: Session = Depends(get_db)):
+def delete_field_inspection(item_id: uuid.UUID, identity=Depends(farmer_session), db: Session = Depends(get_db)):
     row = owned(db, FieldInspection, user(identity), item_id)
     db.delete(row)
     db.commit()

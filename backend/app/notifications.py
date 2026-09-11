@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.main import current_session
+from app.main import farmer_session
 from app.models import Notification, Task, ProductionCycle, Plot
 from app.schemas import NotificationOut
 
@@ -63,16 +63,16 @@ def generate_daily_reminders(
 
 @router.get('/notifications', response_model=list[NotificationOut])
 def list_notifications(
-    identity=Depends(current_session),
+    identity=Depends(farmer_session),
     db: Session = Depends(get_db),
 ):
     owner_id = identity[1].id
     generate_daily_reminders(db, owner_id=owner_id)
     rows = db.execute(
         select(Notification, Task.name, ProductionCycle.name, Plot.name)
-        .join(Task, Task.id == Notification.task_id)
-        .join(ProductionCycle, ProductionCycle.id == Task.cycle_id)
-        .join(Plot, Plot.id == ProductionCycle.plot_id)
+        .outerjoin(Task, Task.id == Notification.task_id)
+        .outerjoin(ProductionCycle, ProductionCycle.id == Task.cycle_id)
+        .outerjoin(Plot, Plot.id == ProductionCycle.plot_id)
         .where(Notification.owner_id == owner_id, Notification.dismissed_at.is_(None))
         .order_by(Notification.created_at.desc(), Notification.id.desc())
     ).all()
@@ -97,7 +97,7 @@ def list_notifications(
 @router.patch('/notifications/{notification_id}/read', response_model=NotificationOut)
 def mark_notification_read(
     notification_id: uuid.UUID,
-    identity=Depends(current_session),
+    identity=Depends(farmer_session),
     db: Session = Depends(get_db),
 ):
     notification = db.scalar(
@@ -119,7 +119,7 @@ def mark_notification_read(
 
 @router.delete('/notifications/read', status_code=204)
 def clear_read_notifications(
-    identity=Depends(current_session),
+    identity=Depends(farmer_session),
     db: Session = Depends(get_db),
 ):
     db.execute(

@@ -18,20 +18,20 @@ class WorkScreen extends StatelessWidget {
           labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
           unselectedLabelStyle: TextStyle(fontSize: 12),
           tabs: [
+            Tab(text: 'รอบผลิต'),
             Tab(text: 'กิจกรรม'),
             Tab(text: 'ตรวจแปลง'),
             Tab(text: 'ตารางงาน'),
-            Tab(text: 'รอบผลิต'),
             Tab(text: 'แปลงเกษตร'),
           ],
         ),
         Expanded(
           child: TabBarView(
             children: const [
+              CyclesScreen(),
               ActivitiesScreen(),
               FieldInspectionsScreen(),
               ScheduleScreen(),
-              CyclesScreen(),
               PlotsScreen(),
             ],
           ),

@@ -59,7 +59,9 @@ def test_forwarded_header_does_not_reset_limit(client):
 
 
 def test_cors_and_health(client):
-    assert client.get('/health/ready').json() == {'status': 'ok', 'database': 'ok'}
+    health = client.get('/health/ready').json()
+    assert health['status'] == 'ok'
+    assert health['database'] == 'ok'
     for origin, expected in [(settings.cors_origins[0], 200), ('https://evil.example', 400)]:
         r = client.options('/api/v1/auth/me', headers={'Origin': origin, 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization'})
         assert r.status_code == expected
@@ -72,9 +74,9 @@ def test_each_required_config(monkeypatch, key):
     with pytest.raises(ValueError): Settings(_env_file=None)
 
 
-def test_database_forbids_admin(client):
+def test_database_rejects_unknown_role(client):
     from sqlalchemy.exc import IntegrityError
     a = registered(client)
     with pytest.raises(IntegrityError):
         with engine.begin() as conn:
-            conn.execute(text("UPDATE users SET role='admin' WHERE id=:id"), {'id': a['user']['id']})
+            conn.execute(text("UPDATE users SET role='superuser' WHERE id=:id"), {'id': a['user']['id']})
