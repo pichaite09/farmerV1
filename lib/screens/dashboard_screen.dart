@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
+import '../utils/thai_date.dart';
 import 'package:provider/provider.dart';
 import '../services/api_session.dart';
+import '../services/offline_queue.dart';
 import 'notification_screen.dart';
 import 'settings_screen.dart';
 
@@ -318,7 +319,7 @@ class _DashboardState extends State<DashboardScreen> {
     final displayName = profileName.isNotEmpty
         ? profileName
         : (emailName.isEmpty ? 'เกษตรกร' : emailName);
-    final date = DateFormat('วันEEEE d MMMM y', 'th').format(DateTime.now());
+    final date = ThaiDate.format(DateTime.now(), includeWeekday: true);
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
       decoration: const BoxDecoration(
@@ -466,7 +467,9 @@ class _DashboardState extends State<DashboardScreen> {
           );
           uploadMessage = ' เพิ่มรูปแล้ว ${files.length} รูป';
         } catch (e) {
-          uploadMessage = ' แต่เพิ่มรูปไม่สำเร็จ';
+          uploadMessage = e is OfflineQueuedException
+              ? ' รูปถูกเก็บเข้าคิวแล้ว จะซิงค์เมื่อออนไลน์'
+              : ' แต่เพิ่มรูปไม่สำเร็จ';
         }
       }
       if (!mounted) return;

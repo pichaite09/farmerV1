@@ -54,3 +54,15 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - run: flutter build web --release --dart-define=FARM_API_BASE_URL=/
+
+  phase5-gates:
+    runs-on: ubuntu-latest
+    needs: [backend, flutter]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate safe release gates
+        run: bash scripts/phase5-gates.sh compose
+      - name: Verify isolated PostgreSQL recovery
+        run: bash scripts/backup-restore-isolated.sh

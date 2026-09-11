@@ -64,6 +64,36 @@ def test_attachments_upload_list_content_replace_delete_and_owner_isolation(clie
     assert client.get('/api/v1/plots/' + plot['id'], headers=a).json()['imageUrl'] is None
 
 
+def test_attachment_idempotency_is_owner_scoped_and_does_not_duplicate(client, tmp_path, monkeypatch):
+    from app.database import settings
+    from sqlalchemy import func, select
+    from app.database import SessionLocal
+    from app.models import Attachment
+
+    monkeypatch.setattr(settings, 'attachment_storage_path', str(tmp_path))
+    a = register(client, 'phase5-idempotency-a@example.com')
+    b = register(client, 'phase5-idempotency-b@example.com')
+    a_plot, _ = make_activity_parent(client, a)
+    b_plot, _ = make_activity_parent(client, b)
+    key = 'phase5-attachment-retry-1'
+
+    first = upload(client, {**a, 'Idempotency-Key': key}, 'plot', a_plot['id'])
+    assert first.status_code == 201, first.text
+    attachment = first.json()
+
+    retry = upload(client, {**a, 'Idempotency-Key': key}, 'plot', a_plot['id'])
+    assert retry.status_code == 201, retry.text
+    assert retry.json() == attachment
+
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Attachment)) == 1
+
+    assert upload(client, {**b, 'Idempotency-Key': key}, 'plot', a_plot['id']).status_code == 404
+    other_owner = upload(client, {**b, 'Idempotency-Key': key}, 'plot', b_plot['id'])
+    assert other_owner.status_code == 201, other_owner.text
+    assert other_owner.json()['id'] != attachment['id']
+
+
 def test_attachments_reject_invalid_signature_extension_and_oversize(client, tmp_path, monkeypatch):
     from app.database import settings
     monkeypatch.setattr(settings, 'attachment_storage_path', str(tmp_path))

@@ -101,6 +101,21 @@ class FarmerApi {
       '${DateTime.now().microsecondsSinceEpoch}-${Object().hashCode}';
 
   Future<void> replayQueued(OfflineQueueEntry entry) async {
+    if (entry.path == '/attachments') {
+      final body = entry.body;
+      if (body == null) throw const FormatException('ข้อมูลรูปภาพในคิวไม่ครบ');
+      final bytes = base64Decode(body['bytesBase64'] as String);
+      _validateImage(bytes, body['contentType'] as String);
+      await _sendAttachment(
+        parentType: body['parentType'] as String,
+        parentId: body['parentId'] as String,
+        filename: body['filename'] as String,
+        contentType: body['contentType'] as String,
+        bytes: bytes,
+        idempotencyKey: entry.idempotencyKey,
+      );
+      return;
+    }
     await _request(
       entry.method,
       entry.path,
@@ -162,22 +177,75 @@ class FarmerApi {
     required XFile file,
   }) async {
     final bytes = await file.readAsBytes();
-    final name = file.name.toLowerCase();
+    final contentType = _contentTypeFor(file.name);
+    _validateImage(bytes, contentType);
+    final idempotencyKey = _newIdempotencyKey();
+    final body = {
+      'parentType': parentType,
+      'parentId': parentId,
+      'filename': file.name,
+      'contentType': contentType,
+      'bytesBase64': base64Encode(bytes),
+    };
+    try {
+      return await _sendAttachment(
+        parentType: parentType,
+        parentId: parentId,
+        filename: file.name,
+        contentType: contentType,
+        bytes: bytes,
+        idempotencyKey: idempotencyKey,
+      );
+    } catch (e) {
+      if (e is! ApiException && offlineQueue != null && queueUserId != null) {
+        await offlineQueue!.enqueue(
+          OfflineQueueEntry(
+            id: _newIdempotencyKey(),
+            userId: queueUserId!,
+            method: 'POST',
+            path: '/attachments',
+            body: body,
+            idempotencyKey: idempotencyKey,
+            createdAt: DateTime.now(),
+          ),
+        );
+        await onQueued?.call();
+        throw const OfflineQueuedException();
+      }
+      rethrow;
+    }
+  }
+
+  String _contentTypeFor(String filename) {
+    final name = filename.toLowerCase();
     final extension = name.contains('.')
         ? name.substring(name.lastIndexOf('.'))
         : '';
-    final contentType = switch (extension) {
+    return switch (extension) {
       '.jpg' || '.jpeg' => 'image/jpeg',
       '.png' => 'image/png',
       '.webp' => 'image/webp',
       _ => throw const FormatException('รองรับเฉพาะ JPEG, PNG หรือ WebP'),
     };
+  }
+
+  void _validateImage(List<int> bytes, String contentType) {
     if (bytes.isEmpty || bytes.length > 10 * 1024 * 1024) {
       throw const FormatException('รูปภาพต้องมีขนาดไม่เกิน 10 MiB');
     }
     if (!_hasImageSignature(bytes, contentType)) {
       throw const FormatException('ชนิดไฟล์รูปภาพไม่ตรงกับนามสกุล');
     }
+  }
+
+  Future<Attachment> _sendAttachment({
+    required String parentType,
+    required String parentId,
+    required String filename,
+    required String contentType,
+    required List<int> bytes,
+    String? idempotencyKey,
+  }) async {
     final request =
         http.MultipartRequest('POST', Uri.parse('$baseUrl/api/v1/attachments'))
           ..fields['parentType'] = parentType
@@ -186,11 +254,14 @@ class FarmerApi {
             http.MultipartFile.fromBytes(
               'file',
               bytes,
-              filename: file.name,
+              filename: filename,
               contentType: _mediaType(contentType),
             ),
           );
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    if (idempotencyKey != null) {
+      request.headers['Idempotency-Key'] = idempotencyKey;
+    }
     final response = await client.send(request);
     final text = await response.stream.bytesToString();
     dynamic data;
@@ -217,15 +288,21 @@ class FarmerApi {
     required List<XFile> files,
   }) async {
     final uploaded = <Attachment>[];
+    var queued = false;
     for (final file in files) {
-      uploaded.add(
-        await uploadAttachment(
-          parentType: parentType,
-          parentId: parentId,
-          file: file,
-        ),
-      );
+      try {
+        uploaded.add(
+          await uploadAttachment(
+            parentType: parentType,
+            parentId: parentId,
+            file: file,
+          ),
+        );
+      } on OfflineQueuedException {
+        queued = true;
+      }
     }
+    if (queued) throw const OfflineQueuedException();
     return uploaded;
   }
 

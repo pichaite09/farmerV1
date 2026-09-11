@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import '../utils/thai_date.dart';
 import 'package:provider/provider.dart';
 import '../models/api_models.dart';
 import '../services/api_session.dart';
@@ -170,7 +170,7 @@ class _CyclesScreenState extends State<CyclesScreen> {
                                   fit: BoxFit.scaleDown,
                                   alignment: Alignment.centerLeft,
                                   child: Text(
-                                    '${x.plantingMethod} • เริ่ม ${DateFormat('dd/MM/yyyy').format(x.startDate)}',
+                                    '${x.plantingMethod} • เริ่ม ${ThaiDate.format(x.startDate)}',
                                     maxLines: 1,
                                     softWrap: false,
                                   ),
@@ -330,7 +330,7 @@ class _CycleActivitiesDialogState extends State<CycleActivitiesDialog> {
               ),
               title: const Text('ตรวจแปลง'),
               subtitle: Text(
-                '${DateFormat('dd/MM/yyyy').format(inspection.inspectionDate)} • สถานะ: $status$followUp${inspection.notes == null || inspection.notes!.isEmpty ? '' : ' • ${inspection.notes}'}',
+                '${ThaiDate.format(inspection.inspectionDate)} • สถานะ: $status$followUp${inspection.notes == null || inspection.notes!.isEmpty ? '' : ' • ${inspection.notes}'}',
               ),
             );
           }
@@ -340,7 +340,7 @@ class _CycleActivitiesDialogState extends State<CycleActivitiesDialog> {
               leading: const Icon(Icons.task_alt, color: Colors.green),
               title: Text('กิจกรรม: ${activity.type}'),
               subtitle: Text(
-                '${DateFormat('dd/MM/yyyy').format(activity.date)}${activity.description == null || activity.description!.isEmpty ? '' : ' • ${activity.description}'}',
+                '${ThaiDate.format(activity.date)}${activity.description == null || activity.description!.isEmpty ? '' : ' • ${activity.description}'}',
               ),
             );
           }
@@ -355,7 +355,7 @@ class _CycleActivitiesDialogState extends State<CycleActivitiesDialog> {
               '${task.isAutomaticFollowUp ? 'ติดตามผลอัตโนมัติ' : 'ตารางงาน'}: ${task.name}',
             ),
             subtitle: Text(
-              '${DateFormat('dd/MM/yyyy').format(task.dueDate)} • สถานะ: ${_taskStatusLabel(task.status)}${task.description == null || task.description!.isEmpty ? '' : ' • ${task.description}'}',
+              '${ThaiDate.format(task.dueDate)} • สถานะ: ${_taskStatusLabel(task.status)}${task.description == null || task.description!.isEmpty ? '' : ' • ${task.description}'}',
             ),
           );
         },
@@ -517,9 +517,7 @@ class CycleFormDialogState extends State<CycleFormDialog> {
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text(
-                'วันเริ่มต้น: ${DateFormat('dd/MM/yyyy').format(date)}',
-              ),
+              title: Text('วันเริ่มต้น: ${ThaiDate.format(date)}'),
               trailing: const Icon(Icons.calendar_today),
               onTap: pick,
             ),

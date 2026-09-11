@@ -34,9 +34,24 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Never produce a distributable artifact signed by the debug key.
+            val storeFile = System.getenv("FARM_RELEASE_STORE_FILE")
+            val storePassword = System.getenv("FARM_RELEASE_STORE_PASSWORD")
+            val keyAlias = System.getenv("FARM_RELEASE_KEY_ALIAS")
+            val keyPassword = System.getenv("FARM_RELEASE_KEY_PASSWORD")
+            if (listOf(storeFile, storePassword, keyAlias, keyPassword).any { it.isNullOrBlank() }) {
+                throw GradleException("Refusing release APK/AAB without explicit signing properties")
+            }
+            val requiredStoreFile = requireNotNull(storeFile)
+            val requiredStorePassword = requireNotNull(storePassword)
+            val requiredKeyAlias = requireNotNull(keyAlias)
+            val requiredKeyPassword = requireNotNull(keyPassword)
+            signingConfig = signingConfigs.create("release") {
+                this.storeFile = file(requiredStoreFile)
+                this.storePassword = requiredStorePassword
+                this.keyAlias = requiredKeyAlias
+                this.keyPassword = requiredKeyPassword
+            }
         }
     }
 }

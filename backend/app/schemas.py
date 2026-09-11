@@ -210,7 +210,7 @@ class TaskCreate(APIModel):
     @field_validator('status')
     @classmethod
     def st(cls,v):
-        if v not in ('pending','in_progress','completed'):raise ValueError('invalid status')
+        if v not in ('pending','in_progress','completed','cancelled'):raise ValueError('invalid status')
         return v
 class TaskPatch(TaskCreate):
     name:str|None=None;cycle_id:uuid.UUID|None=None;due_date:DateType|None=None;status:str|None=None

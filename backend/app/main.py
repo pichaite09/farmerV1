@@ -160,7 +160,7 @@ def live():
 def ready():
     try:
         with engine.connect() as conn:
-            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0013_task_attachments'
+            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0016_cancelled_task_status'
             conn.execute(text('SELECT id FROM users LIMIT 1'))
     except Exception:
         raise HTTPException(503, 'Database not ready')

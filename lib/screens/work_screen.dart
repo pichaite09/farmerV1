@@ -12,8 +12,9 @@ class WorkScreen extends StatelessWidget {
     child: Column(
       children: [
         const TabBar(
-          isScrollable: false,
-          labelPadding: EdgeInsets.symmetric(horizontal: 4),
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          labelPadding: EdgeInsets.symmetric(horizontal: 12),
           labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
           unselectedLabelStyle: TextStyle(fontSize: 12),
           tabs: [

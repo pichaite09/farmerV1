@@ -76,6 +76,7 @@ class FuelRecord(Base):
     id: Mapped[uuid.UUID]=mapped_column(primary_key=True,default=uuid.uuid4);owner_id: Mapped[uuid.UUID]=mapped_column(ForeignKey('users.id',ondelete='RESTRICT'),index=True);vehicle_id: Mapped[uuid.UUID]=mapped_column(ForeignKey('vehicles.id',ondelete='RESTRICT'));date: Mapped[date]=mapped_column(Date);fuel_type: Mapped[str]=mapped_column(String(100));amount: Mapped[Decimal]=mapped_column(Numeric(14,2));details: Mapped[str|None]=mapped_column(Text);odometer: Mapped[Decimal|None]=mapped_column(Numeric(14,2));transaction_id: Mapped[uuid.UUID|None]=mapped_column(ForeignKey('transactions.id',ondelete='CASCADE'),unique=True);created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),server_default=func.now());updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now())
 class Task(Base):
     __tablename__='tasks'
+    __table_args__ = (CheckConstraint("status IN ('pending', 'in_progress', 'completed', 'cancelled')", name='tasks_status_valid'),)
     id: Mapped[uuid.UUID]=mapped_column(primary_key=True,default=uuid.uuid4);owner_id: Mapped[uuid.UUID]=mapped_column(ForeignKey('users.id',ondelete='RESTRICT'),index=True);name: Mapped[str]=mapped_column(String(200));cycle_id: Mapped[uuid.UUID]=mapped_column(ForeignKey('production_cycles.id',ondelete='RESTRICT'));due_date: Mapped[date]=mapped_column(Date);status: Mapped[str]=mapped_column(String(20));description: Mapped[str|None]=mapped_column(Text);created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),server_default=func.now());updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now())
 class CategorySetting(Base):
     __tablename__='category_settings'
@@ -112,10 +113,12 @@ class FieldInspection(Base):
 
 class Attachment(Base):
     __tablename__ = 'attachments'
+    __table_args__ = (UniqueConstraint('owner_id', 'idempotency_key', name='uq_attachment_owner_idempotency_key'),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
     parent_type: Mapped[str] = mapped_column(String(16))
     parent_id: Mapped[uuid.UUID] = mapped_column()
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
     storage_name: Mapped[str] = mapped_column(String(100), unique=True)
     content_type: Mapped[str] = mapped_column(String(32))
     size_bytes: Mapped[int] = mapped_column()
@@ -144,3 +147,19 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+class PushOutbox(Base):
+    __tablename__ = 'push_outbox'
+    __table_args__ = (UniqueConstraint('notification_id', 'subscription_id', name='uq_push_outbox_notification_subscription'), CheckConstraint("status IN ('pending', 'claimed', 'sent', 'failed')", name='ck_push_outbox_status'))
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    notification_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('notifications.id', ondelete='CASCADE'), index=True)
+    subscription_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('push_subscriptions.id', ondelete='CASCADE'), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(16), default='pending', server_default='pending', index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default='0')
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

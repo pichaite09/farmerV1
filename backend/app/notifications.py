@@ -28,7 +28,7 @@ def generate_daily_reminders(
     tomorrow = run_date + timedelta(days=1)
     task_query = select(Task).where(
         Task.due_date == tomorrow,
-        Task.status != 'completed',
+        Task.status.notin_(['completed', 'cancelled']),
     )
     if owner_id is not None:
         task_query = task_query.where(Task.owner_id == owner_id)
@@ -47,9 +47,14 @@ def generate_daily_reminders(
         db.execute(statement)
     db.commit()
 
-    notification_query = select(Notification).where(
-        Notification.due_date == tomorrow,
-        Notification.kind == 'task_due_tomorrow',
+    notification_query = (
+        select(Notification)
+        .join(Task, Task.id == Notification.task_id)
+        .where(
+            Notification.due_date == tomorrow,
+            Notification.kind == 'task_due_tomorrow',
+            Task.status.notin_(['completed', 'cancelled']),
+        )
     )
     if owner_id is not None:
         notification_query = notification_query.where(Notification.owner_id == owner_id)

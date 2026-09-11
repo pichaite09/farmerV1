@@ -4,8 +4,9 @@ import 'package:provider/provider.dart';
 import '../models/api_models.dart';
 import '../services/api_session.dart';
 import '../services/offline_queue.dart';
+import '../utils/thai_date.dart';
 
-String _sd(DateTime d) => d.toIso8601String().split('T').first;
+String _sd(DateTime d) => ThaiDate.toIsoDate(d);
 Future<bool> _sc(BuildContext c, String n) => showDialog<bool>(
   context: c,
   builder: (x) => AlertDialog(
@@ -78,8 +79,10 @@ class _ScheduleState extends State<ScheduleScreen> {
             files: files,
           );
           imageMessage = ' เพิ่มรูปแล้ว ${files.length} รูป';
-        } catch (_) {
-          imageMessage = ' แต่เพิ่มรูปไม่สำเร็จ';
+        } catch (e) {
+          imageMessage = e is OfflineQueuedException
+              ? ' รูปถูกเก็บเข้าคิวแล้ว จะซิงค์เมื่อออนไลน์'
+              : ' แต่เพิ่มรูปไม่สำเร็จ';
         }
       }
       if (!mounted) return;
@@ -243,7 +246,7 @@ class _ScheduleState extends State<ScheduleScreen> {
                           ),
                           title: Text(x.name),
                           subtitle: Text(
-                            '${names[x.cycleId] ?? 'ไม่พบรอบผลิต'} • ${_sd(x.dueDate)}${x.isAutomaticFollowUp ? '\nงานติดตามผลอัตโนมัติ' : ''}${x.description == null || x.description!.isEmpty ? '' : '\n${x.description}'}',
+                            '${names[x.cycleId] ?? 'ไม่พบรอบผลิต'} • ${ThaiDate.format(x.dueDate)}${x.isAutomaticFollowUp ? '\nงานติดตามผลอัตโนมัติ' : ''}${x.description == null || x.description!.isEmpty ? '' : '\n${x.description}'}',
                           ),
                           isThreeLine: true,
                           trailing: Row(

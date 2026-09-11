@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
+import '../utils/thai_date.dart';
 import 'package:provider/provider.dart';
 import '../models/api_models.dart';
 import '../services/api_session.dart';
@@ -144,7 +144,7 @@ class _ActivitiesScreenState extends State<ActivitiesScreen> {
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 subtitle: Text(
-                  '${x.description ?? ''}\n${cycle == null ? 'ไม่ระบุแปลง • ไม่ระบุรอบ' : '${cycle.plotName} • ${cycle.name}'} • ${DateFormat('dd/MM/yyyy').format(x.date)}',
+                  '${x.description ?? ''}\n${cycle == null ? 'ไม่ระบุแปลง • ไม่ระบุรอบ' : '${cycle.plotName} • ${cycle.name}'} • ${ThaiDate.format(x.date)}',
                 ),
                 isThreeLine: true,
                 trailing: PopupMenuButton<String>(
@@ -300,7 +300,7 @@ class ActivityFormDialogState extends State<ActivityFormDialog> {
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text('วันที่: ${DateFormat('dd/MM/yyyy').format(date)}'),
+              title: Text('วันที่: ${ThaiDate.format(date)}'),
               trailing: const Icon(Icons.calendar_today),
               onTap: pick,
             ),

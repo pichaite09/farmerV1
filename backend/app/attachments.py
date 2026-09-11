@@ -5,10 +5,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, settings
@@ -101,12 +102,23 @@ def upload_attachment(
     parent_type: str = Form(..., alias='parentType'),
     parent_id: uuid.UUID = Form(..., alias='parentId'),
     file: UploadFile = File(...),
+    idempotency_key: str | None = Header(None, alias='Idempotency-Key', max_length=255),
     identity=Depends(current_session),
     db: Session = Depends(get_db),
 ):
     # Fixed multipart fields; filenames are never used as storage identifiers.
     parent_type = parent_type.strip().lower()
-    parent = _parent(db, parent_type, parent_id, _user(identity).id)
+    user_id = _user(identity).id
+    parent = _parent(db, parent_type, parent_id, user_id)
+    if idempotency_key:
+        existing_for_key = db.scalar(select(Attachment).where(
+            Attachment.owner_id == user_id,
+            Attachment.idempotency_key == idempotency_key,
+        ))
+        if existing_for_key is not None:
+            if existing_for_key.parent_type != parent_type or existing_for_key.parent_id != parent_id:
+                raise HTTPException(409, 'Idempotency-Key already used for a different attachment request')
+            return _out(existing_for_key)
     filename = Path(file.filename or '').name
     suffix = Path(filename).suffix.lower()
     expected = ALLOWED.get(suffix)
@@ -115,6 +127,7 @@ def upload_attachment(
 
     storage_dir = _storage_dir()
     temp_path = storage_dir / f'.{uuid.uuid4().hex}.upload'
+    final_path: Path | None = None
     total = 0
     prefix = b''
     try:
@@ -140,15 +153,20 @@ def upload_attachment(
         old_storage_name = None
         existing = None
         if parent_type in ('plot', 'activity'):
-            existing = db.scalar(select(Attachment).where(Attachment.parent_type == parent_type, Attachment.parent_id == parent_id))
+            existing = db.scalar(select(Attachment).where(
+                Attachment.owner_id == user_id,
+                Attachment.parent_type == parent_type,
+                Attachment.parent_id == parent_id,
+            ))
         if existing is None:
-            existing = Attachment(owner_id=_user(identity).id, parent_type=parent_type, parent_id=parent_id)
+            existing = Attachment(owner_id=user_id, parent_type=parent_type, parent_id=parent_id)
             db.add(existing)
         else:
             old_storage_name = existing.storage_name
         existing.storage_name = storage_name
         existing.content_type = content_type
         existing.size_bytes = total
+        existing.idempotency_key = idempotency_key
         db.flush()
         if hasattr(parent, 'image_url'):
             parent.image_url = _content_url(existing.id)
@@ -160,10 +178,25 @@ def upload_attachment(
     except HTTPException:
         temp_path.unlink(missing_ok=True)
         raise
+    except IntegrityError:
+        db.rollback()
+        if idempotency_key:
+            raced = db.scalar(select(Attachment).where(
+                Attachment.owner_id == user_id,
+                Attachment.idempotency_key == idempotency_key,
+            ))
+            if raced is not None and raced.parent_type == parent_type and raced.parent_id == parent_id:
+                if final_path is not None:
+                    final_path.unlink(missing_ok=True)
+                return _out(raced)
+        temp_path.unlink(missing_ok=True)
+        if final_path is not None:
+            final_path.unlink(missing_ok=True)
+        raise
     except Exception:
         db.rollback()
         temp_path.unlink(missing_ok=True)
-        if 'final_path' in locals():
+        if final_path is not None:
             final_path.unlink(missing_ok=True)
         raise
     finally:
