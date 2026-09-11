@@ -61,6 +61,7 @@ class FieldInspection {
 
 class ApiUser {
   final String id, email, role;
+  final String? status;
   final String? firstName,
       lastName,
       birthDate,
@@ -73,6 +74,7 @@ class ApiUser {
     required this.id,
     required this.email,
     required this.role,
+    this.status,
     this.firstName,
     this.lastName,
     this.birthDate,
@@ -86,6 +88,7 @@ class ApiUser {
     id: _s(j['id']),
     email: _s(j['email']),
     role: _s(j['role'] ?? 'farmer'),
+    status: _j(j, 'status')?.toString(),
     firstName: _j(j, 'firstName')?.toString(),
     lastName: _j(j, 'lastName')?.toString(),
     birthDate: _j(j, 'birthDate')?.toString(),

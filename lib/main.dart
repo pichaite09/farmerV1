@@ -6,6 +6,7 @@ import 'services/api_session.dart';
 import 'providers/category_provider.dart';
 import 'screens/auth_screen.dart';
 import 'screens/main_screen.dart';
+import 'screens/admin_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -167,7 +168,11 @@ class AuthWrapper extends StatelessWidget {
     builder: (context, session, _) {
       if (!session.initialized)
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
-      return session.isAuthenticated ? const MainScreen() : const AuthScreen();
+      return session.isAuthenticated
+          ? (session.user?.role == 'admin'
+                ? const AdminScreen()
+                : const MainScreen())
+          : const AuthScreen();
     },
   );
 }

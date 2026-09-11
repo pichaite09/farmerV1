@@ -3,11 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:farmer/main.dart';
 import 'package:farmer/services/api_session.dart';
+import 'package:farmer/services/farmer_api.dart';
 import 'package:farmer/providers/category_provider.dart';
 import 'package:farmer/screens/auth_screen.dart';
 import 'package:farmer/screens/plots_screen.dart';
 import 'package:farmer/screens/cycles_screen.dart';
 import 'package:farmer/screens/activities_screen.dart';
+import 'package:farmer/screens/admin_screen.dart';
 import 'package:farmer/models/api_models.dart';
 
 void main() {
@@ -49,6 +51,34 @@ void main() {
     expect(find.text('กรุณาเลือกแปลง'), findsOneWidget);
   });
 
+  testWidgets('routes admin sessions to the admin UI', (tester) async {
+    final session = ApiSession()..initialized = true;
+    session.api.token = 'test-token';
+    session.user = const ApiUser(
+      id: 'admin-1',
+      email: 'admin@example.com',
+      role: 'admin',
+      status: 'active',
+    );
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(value: session, child: const FarmerApp()),
+    );
+    await tester.pump();
+    expect(find.byType(AdminScreen), findsOneWidget);
+    expect(find.text('ศูนย์จัดการระบบ'), findsOneWidget);
+    expect(find.text('ภาพรวม'), findsOneWidget);
+    expect(find.text('ผู้ใช้งาน'), findsOneWidget);
+  });
+
+  testWidgets('admin navigation exposes all MVP sections', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: AdminScreen(api: FarmerApi())));
+    await tester.pump();
+    expect(find.text('ภาพรวม'), findsOneWidget);
+    expect(find.text('ผู้ใช้งาน'), findsOneWidget);
+    expect(find.text('ข้อมูลเกษตร'), findsOneWidget);
+    expect(find.text('ประกาศ'), findsOneWidget);
+    expect(find.text('บันทึกกิจกรรม'), findsOneWidget);
+  });
   testWidgets('ฟอร์มกิจกรรมมีตัวเลือกเก็บเกี่ยว', (tester) async {
     final cycle = ProductionCycle(
       id: 'c1',
@@ -69,7 +99,10 @@ void main() {
         ),
       ),
     );
-    expect(find.text('กิจกรรมนี้คือการเก็บเกี่ยวและปิดรอบผลิต'), findsOneWidget);
+    expect(
+      find.text('กิจกรรมนี้คือการเก็บเกี่ยวและปิดรอบผลิต'),
+      findsOneWidget,
+    );
     expect(find.textContaining('completeCycle=true'), findsNothing);
   });
 }

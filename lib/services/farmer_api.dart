@@ -5,6 +5,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 import 'offline_queue.dart';
 import '../models/api_models.dart';
+import '../models/admin_models.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -547,4 +548,129 @@ class FarmerApi {
     },
   ).then(_map);
   Future<void> delete(String path) => _request('DELETE', path).then((_) {});
+
+  Future<AdminDashboard> adminDashboard({String? from, String? to}) => _request(
+    'GET',
+    '/admin/dashboard',
+    query: {if (from != null) 'from': from, if (to != null) 'to': to},
+  ).then((v) => AdminDashboard.fromJson(_map(v)));
+
+  Future<AdminPage<ApiUser>> adminUsers({
+    String? q,
+    String? role,
+    String? status,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final v = _map(
+      await _request(
+        'GET',
+        '/admin/users',
+        query: {
+          if (q != null && q.isNotEmpty) 'q': q,
+          if (role != null) 'role': role,
+          if (status != null) 'status': status,
+          'limit': '$limit',
+          'offset': '$offset',
+        },
+      ),
+    );
+    return AdminPage.fromJson(v, adminUserFromJson);
+  }
+
+  Future<ApiUser> adminUpdateUser(String id, Map<String, dynamic> body) =>
+      _request(
+        'PATCH',
+        '/admin/users/$id',
+        body: body,
+      ).then((v) => ApiUser.fromJson(_map(v)));
+  Future<ApiUser> adminSuspendUser(String id) => _request(
+    'POST',
+    '/admin/users/$id/suspend',
+  ).then((v) => ApiUser.fromJson(_map(v)));
+  Future<ApiUser> adminActivateUser(String id) => _request(
+    'POST',
+    '/admin/users/$id/activate',
+  ).then((v) => ApiUser.fromJson(_map(v)));
+  Future<int> adminRevokeSessions(String id) => _request(
+    'POST',
+    '/admin/users/$id/revoke-sessions',
+  ).then((v) => (_map(v)['revoked'] as num?)?.toInt() ?? 0);
+
+  Future<AdminPage<Map<String, dynamic>>> adminRecords(
+    String type, {
+    String? from,
+    String? to,
+    String? owner,
+    String? plot,
+    String? cycle,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final v = _map(
+      await _request(
+        'GET',
+        '/admin/records',
+        query: {
+          'type': type,
+          if (from != null) 'from': from,
+          if (to != null) 'to': to,
+          if (owner != null) 'owner': owner,
+          if (plot != null) 'plot': plot,
+          if (cycle != null) 'cycle': cycle,
+          'limit': '$limit',
+          'offset': '$offset',
+        },
+      ),
+    );
+    return AdminPage.fromJson(v, (j) => j);
+  }
+
+  Future<Map<String, dynamic>> adminRecord(String type, String id) =>
+      _request('GET', '/admin/records/$type/$id').then(_map);
+
+  Future<Map<String, dynamic>> previewAnnouncement(Map<String, dynamic> body) =>
+      _request('POST', '/admin/announcements/preview', body: body).then(_map);
+  Future<AdminAnnouncement> createAnnouncement(Map<String, dynamic> body) =>
+      _request(
+        'POST',
+        '/admin/announcements',
+        body: body,
+      ).then((v) => AdminAnnouncement.fromJson(_map(v)));
+  Future<List<AdminAnnouncement>> adminAnnouncements() async {
+    final v = await _request('GET', '/admin/announcements');
+    return (v as List)
+        .map((e) => AdminAnnouncement.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  Future<AdminAnnouncement> sendAnnouncement(String id) => _request(
+    'POST',
+    '/admin/announcements/$id/send',
+  ).then((v) => AdminAnnouncement.fromJson(_map(v)));
+  Future<AdminAnnouncement> cancelAnnouncement(String id) => _request(
+    'POST',
+    '/admin/announcements/$id/cancel',
+  ).then((v) => AdminAnnouncement.fromJson(_map(v)));
+
+  Future<AdminPage<AdminAuditLog>> adminAuditLogs({
+    String? action,
+    String? targetType,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final v = _map(
+      await _request(
+        'GET',
+        '/admin/audit-logs',
+        query: {
+          if (action != null) 'action': action,
+          if (targetType != null) 'target_type': targetType,
+          'limit': '$limit',
+          'offset': '$offset',
+        },
+      ),
+    );
+    return AdminPage.fromJson(v, (j) => AdminAuditLog.fromJson(j));
+  }
 }
