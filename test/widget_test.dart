@@ -79,6 +79,17 @@ void main() {
     expect(find.text('ประกาศ'), findsOneWidget);
     expect(find.text('บันทึกกิจกรรม'), findsOneWidget);
   });
+  testWidgets('announcement actions stack on narrow screens', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(320, 800));
+    await tester.pumpWidget(
+      MaterialApp(home: AdminAnnouncementsPage(api: FarmerApi())),
+    );
+    await tester.pump();
+    expect(find.text('สร้างประกาศ'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('ฟอร์มกิจกรรมมีตัวเลือกเก็บเกี่ยว', (tester) async {
     final cycle = ProductionCycle(
       id: 'c1',
