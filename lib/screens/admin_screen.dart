@@ -22,16 +22,16 @@ class AdminScreen extends StatefulWidget {
 class _AdminScreenState extends State<AdminScreen> {
   int index = 0;
   static const names = [
+    'ข้อมูลเกษตร',
     'ภาพรวม',
     'ผู้ใช้งาน',
-    'ข้อมูลเกษตร',
     'ประกาศ',
     'บันทึกกิจกรรม',
   ];
   static const icons = [
+    Icons.folder_copy_outlined,
     Icons.grid_view_rounded,
     Icons.people_alt_outlined,
-    Icons.folder_copy_outlined,
     Icons.campaign_outlined,
     Icons.history_rounded,
   ];
@@ -44,12 +44,12 @@ class _AdminScreenState extends State<AdminScreen> {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final pages = [
+      AdminRecordsPage(api: api),
       AdminDashboardPage(
         api: api,
         onNavigate: (i) => setState(() => index = i),
       ),
       AdminUsersPage(api: api, currentUserId: currentUserId),
-      AdminRecordsPage(api: api),
       AdminAnnouncementsPage(api: api),
       AdminAuditPage(api: api),
     ];
@@ -118,7 +118,8 @@ class _AdminScreenState extends State<AdminScreen> {
                 destinations: [
                   for (var i = 0; i < names.length; i++)
                     NavigationDestination(
-                      icon: Icon(icons[i]),
+                      icon: Icon(icons[i], color: _muted),
+                      selectedIcon: Icon(icons[i], color: _emerald),
                       label: names[i],
                     ),
                 ],
@@ -165,8 +166,15 @@ class _Sidebar extends StatelessWidget {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
-              leading: Icon(_AdminScreenState.icons[i], size: 20),
-              title: Text(_AdminScreenState.names[i]),
+              leading: Icon(
+                _AdminScreenState.icons[i],
+                size: 20,
+                color: index == i ? _emerald : _muted,
+              ),
+              title: Text(
+                _AdminScreenState.names[i],
+                style: TextStyle(color: index == i ? _emerald : _muted),
+              ),
               onTap: () => onSelect(i),
             ),
           ),
@@ -364,7 +372,7 @@ class AdminDashboardPage extends StatelessWidget {
                     OutlinedButton.icon(
                       onPressed: onNavigate == null
                           ? null
-                          : () => onNavigate!(1),
+                          : () => onNavigate!(2),
                       icon: const Icon(Icons.people_outline),
                       label: const Text('ตรวจสอบผู้ใช้งาน'),
                     ),
@@ -658,43 +666,56 @@ class AdminRecordsPage extends StatefulWidget {
 
 class _RecordsState extends State<AdminRecordsPage> {
   String type = 'activity';
+  String? farmerId;
   int offset = 0;
   late Future<AdminPage<Map<String, dynamic>>> future;
+  late Future<AdminPage<ApiUser>> farmersFuture;
   @override
   void initState() {
     super.initState();
+    farmersFuture = widget.api.adminUsers(role: 'farmer', limit: 100);
     _load();
   }
 
-  void _load() => future = widget.api.adminRecords(type, offset: offset);
+  void _load() =>
+      future = widget.api.adminRecords(type, owner: farmerId, offset: offset);
   void refresh() => setState(_load);
+  void _reloadFarmers() => setState(() {
+    farmersFuture = widget.api.adminUsers(role: 'farmer', limit: 100);
+  });
+
+  String _farmerLabel(ApiUser farmer) {
+    final name = [farmer.firstName, farmer.lastName]
+        .whereType<String>()
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .join(' ');
+    return name.isNotEmpty ? name : farmer.email;
+  }
+
   @override
   Widget build(BuildContext context) => _Page(
     title: 'ข้อมูลเกษตร',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DropdownButton<String>(
-          value: type,
-          items: const [
-            DropdownMenuItem(value: 'activity', child: Text('กิจกรรม')),
-            DropdownMenuItem(
-              value: 'field_inspection',
-              child: Text('ตรวจแปลง'),
-            ),
-            DropdownMenuItem(value: 'task', child: Text('งาน')),
-            DropdownMenuItem(value: 'production_cycle', child: Text('รอบผลิต')),
-            DropdownMenuItem(value: 'plot', child: Text('แปลง')),
-            DropdownMenuItem(value: 'transaction', child: Text('การเงิน')),
-            DropdownMenuItem(value: 'fuel_record', child: Text('เชื้อเพลิง')),
-          ],
-          onChanged: (v) {
-            if (v != null)
-              setState(() {
-                type = v;
-                offset = 0;
-                _load();
-              });
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final narrow = constraints.maxWidth < 560;
+            return Flex(
+              direction: narrow ? Axis.vertical : Axis.horizontal,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: narrow ? double.infinity : 220,
+                  child: _typeFilter(),
+                ),
+                SizedBox(
+                  width: narrow ? double.infinity : 280,
+                  child: _farmerFilter(),
+                ),
+              ],
+            );
           },
         ),
         const SizedBox(height: 12),
@@ -726,6 +747,88 @@ class _RecordsState extends State<AdminRecordsPage> {
       ],
     ),
   );
+
+  Widget _typeFilter() => DropdownButtonFormField<String>(
+    value: type,
+    decoration: const InputDecoration(labelText: 'ประเภทข้อมูล'),
+    items: const [
+      DropdownMenuItem(value: 'activity', child: Text('กิจกรรม')),
+      DropdownMenuItem(value: 'field_inspection', child: Text('ตรวจแปลง')),
+      DropdownMenuItem(value: 'task', child: Text('งาน')),
+      DropdownMenuItem(value: 'production_cycle', child: Text('รอบผลิต')),
+      DropdownMenuItem(value: 'plot', child: Text('แปลง')),
+      DropdownMenuItem(value: 'transaction', child: Text('การเงิน')),
+      DropdownMenuItem(value: 'fuel_record', child: Text('เชื้อเพลิง')),
+    ],
+    onChanged: (v) {
+      if (v != null)
+        setState(() {
+          type = v;
+          offset = 0;
+          _load();
+        });
+    },
+  );
+
+  Widget _farmerFilter() => FutureBuilder<AdminPage<ApiUser>>(
+    future: farmersFuture,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return Row(
+          children: [
+            const Expanded(child: Text('โหลดรายชื่อเกษตรกรไม่สำเร็จ')),
+            IconButton(
+              tooltip: 'ลองใหม่',
+              onPressed: _reloadFarmers,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        );
+      }
+      if (!snapshot.hasData) {
+        return const InputDecorator(
+          decoration: InputDecoration(labelText: 'เกษตรกร'),
+          child: SizedBox(
+            height: 20,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+        );
+      }
+      final farmers = snapshot.data!.items;
+      final validValue =
+          farmerId == null || farmers.any((f) => f.id == farmerId)
+          ? farmerId
+          : null;
+      return DropdownButtonFormField<String?>(
+        value: validValue,
+        decoration: const InputDecoration(labelText: 'เกษตรกร'),
+        items: [
+          const DropdownMenuItem<String?>(value: null, child: Text('ทั้งหมด')),
+          ...farmers.map(
+            (farmer) => DropdownMenuItem<String?>(
+              value: farmer.id,
+              child: Text(_farmerLabel(farmer)),
+            ),
+          ),
+        ],
+        onChanged: (value) {
+          setState(() {
+            farmerId = value;
+            offset = 0;
+            _load();
+          });
+        },
+      );
+    },
+  );
+
   Widget _record(Map<String, dynamic> r) {
     final title = _safeValue(r, ['name', 'title', 'description', 'id']);
     final date = _safeValue(r, ['createdAt', 'created_at', 'date']);
