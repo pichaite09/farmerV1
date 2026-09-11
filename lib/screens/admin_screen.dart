@@ -29,11 +29,11 @@ class _AdminScreenState extends State<AdminScreen> {
     'บันทึกกิจกรรม',
   ];
   static const icons = [
-    Icons.folder_copy_outlined,
-    Icons.grid_view_rounded,
-    Icons.people_alt_outlined,
-    Icons.campaign_outlined,
-    Icons.history_rounded,
+    Icons.folder,
+    Icons.dashboard,
+    Icons.people,
+    Icons.campaign,
+    Icons.history,
   ];
   FarmerApi get api => widget.api ?? context.read<ApiSession>().api;
   String? get currentUserId =>
@@ -166,14 +166,21 @@ class _Sidebar extends StatelessWidget {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
-              leading: Icon(
-                _AdminScreenState.icons[i],
-                size: 20,
-                color: index == i ? _emerald : _muted,
+              leading: SizedBox(
+                width: 24,
+                height: 24,
+                child: Icon(
+                  _AdminScreenState.icons[i],
+                  size: 21,
+                  color: index == i ? _emerald : _muted,
+                ),
               ),
               title: Text(
                 _AdminScreenState.names[i],
-                style: TextStyle(color: index == i ? _emerald : _muted),
+                style: TextStyle(
+                  color: index == i ? _emerald : Colors.white70,
+                  fontWeight: index == i ? FontWeight.w700 : FontWeight.w500,
+                ),
               ),
               onTap: () => onSelect(i),
             ),
@@ -198,7 +205,8 @@ class _Page extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
     padding: const EdgeInsets.all(24),
-    child: Center(
+    child: Align(
+      alignment: Alignment.topLeft,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 1280),
         child: Column(
