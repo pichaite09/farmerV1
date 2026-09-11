@@ -95,6 +95,7 @@ def update_activity(item_id: uuid.UUID, body: ActivityPatch, identity=Depends(cu
     if c.status=='completed': raise HTTPException(409,'Cycle is completed')
     changes=body.model_dump(exclude_unset=True, exclude={'image_url'})
     if 'cycle_id' in changes and changes['cycle_id'] != a.cycle_id:
+        owned(db,ProductionCycle,u,changes['cycle_id'])
         raise HTTPException(409, 'Moving an activity between cycles is not supported')
     if 'cycle_id' in changes:
         target_cycle = locked_cycle(db,u,changes['cycle_id'])
