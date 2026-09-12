@@ -1208,52 +1208,48 @@ class _AdminProductionCycleDetailPageState
                 ...items.map(
                   (item) => Card(
                     margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      leading: item.attachments.isEmpty
-                          ? const Icon(Icons.circle, size: 12, color: _emerald)
-                          : InkWell(
-                              onTap: () => showDialog(
-                                context: context,
-                                builder: (_) => _AdminImageDialog(
-                                  api: widget.api,
-                                  attachment: _attachmentMap(
-                                    item.attachments.first,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ListTile(
+                          leading: item.attachments.isEmpty
+                              ? const Icon(
+                                  Icons.circle,
+                                  size: 12,
+                                  color: _emerald,
+                                )
+                              : InkWell(
+                                  onTap: () => showDialog(
+                                    context: context,
+                                    builder: (_) => _AdminImageDialog(
+                                      api: widget.api,
+                                      attachment: _attachmentMap(
+                                        item.attachments.first,
+                                      ),
+                                    ),
+                                  ),
+                                  child: _RecordImagePreview(
+                                    api: widget.api,
+                                    attachment: _attachmentMap(
+                                      item.attachments.first,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              child: _RecordImagePreview(
-                                api: widget.api,
-                                attachment: _attachmentMap(
-                                  item.attachments.first,
-                                ),
-                              ),
-                            ),
-                      title: Text(item.title),
-                      subtitle: Text(
-                        '${_recordTypes[item.type] ?? 'ข้อมูล'} • ${_thaiDate(item.date)}',
-                        style: const TextStyle(color: _muted),
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => showDialog(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: Text(
-                            _recordTypes[item.type] ?? 'รายละเอียดข้อมูล',
+                          title: Text(item.title),
+                          subtitle: Text(
+                            '${_recordTypes[item.type] ?? 'ข้อมูล'} • ${_thaiDate(item.date)}',
+                            style: const TextStyle(color: _muted),
                           ),
-                          content: SingleChildScrollView(
-                            child: _RecordDetails(
-                              api: widget.api,
-                              record: item.data,
-                            ),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('ปิด'),
-                            ),
-                          ],
                         ),
-                      ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          child: _RecordDetails(
+                            api: widget.api,
+                            record: item.data,
+                            showImages: false,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1426,7 +1422,12 @@ class _AdminImageDialog extends StatelessWidget {
 class _RecordDetails extends StatelessWidget {
   final FarmerApi api;
   final Map<String, dynamic> record;
-  const _RecordDetails({required this.api, required this.record});
+  final bool showImages;
+  const _RecordDetails({
+    required this.api,
+    required this.record,
+    this.showImages = true,
+  });
   @override
   Widget build(BuildContext context) {
     final allowed = [
@@ -1461,12 +1462,12 @@ class _RecordDetails extends StatelessWidget {
       'cycle',
     ];
     return SizedBox(
-      width: 420,
+      width: (MediaQuery.sizeOf(context).width - 64).clamp(0.0, 420.0),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_imageAttachments(record).isNotEmpty)
+          if (showImages && _imageAttachments(record).isNotEmpty)
             _AdminImageGallery(
               api: api,
               attachments: _imageAttachments(record),

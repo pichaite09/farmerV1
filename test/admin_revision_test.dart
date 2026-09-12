@@ -23,7 +23,7 @@ void main() {
       final rows = tester.widget<DataTable>(find.byType(DataTable)).rows;
       rows[i].onSelectChanged!(true);
       await tester.pumpAndSettle();
-      expect(find.textContaining('ผู้บันทึก: สมชาย เกษตรดี'), findsOneWidget);
+      expect(find.textContaining('ผู้บันทึก: สมชาย เกษตรดี'), findsWidgets);
       expect(find.textContaining('synthetic-'), findsNothing);
       await tester.tap(find.text('ปิด'));
       await tester.pumpAndSettle();
@@ -141,6 +141,7 @@ void main() {
       expect(find.text('ตรวจแปลง 1'), findsOneWidget);
       expect(find.text('กรองประเภทในไทม์ไลน์'), findsOneWidget);
       expect(find.text('ปลูกข้าวฤดูฝน'), findsOneWidget);
+      expect(find.text('รายละเอียด: ปลูกข้าวฤดูฝน'), findsOneWidget);
       expect(find.byType(Image), findsOneWidget);
       await tester.tap(find.byType(DropdownButtonFormField<String?>));
       await tester.pumpAndSettle();
