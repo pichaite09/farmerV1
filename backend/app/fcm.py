@@ -29,5 +29,5 @@ def send_fcm(token: str, payload: dict) -> str:
     return messaging.send(messaging.Message(
         token=token,
         notification=messaging.Notification(title=payload['title'], body=payload['body']),
-        data={str(k): str(v) for k, v in payload.items()}, app=_app(),
-    ))
+        data={str(k): str(v) for k, v in payload.items()},
+    ), app=_app())
