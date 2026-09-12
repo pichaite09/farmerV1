@@ -375,20 +375,44 @@ class _FieldInspectionFormDialogState extends State<FieldInspectionFormDialog> {
                   style: TextStyle(color: Colors.red),
                 ),
               ),
-            OutlinedButton.icon(
-              onPressed: () async {
-                files = await ImagePicker().pickMultiImage(
-                  imageQuality: 70,
-                  maxWidth: 1200,
-                );
-                setState(() {});
-              },
-              icon: const Icon(Icons.photo_library),
-              label: Text(
-                files.isEmpty
-                    ? 'เลือกรูปภาพหลายรูป'
-                    : 'เลือกรูปภาพแล้ว ${files.length} รูป',
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      files = await ImagePicker().pickMultiImage(
+                        imageQuality: 70,
+                        maxWidth: 1200,
+                      );
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.photo_library),
+                    label: Text(
+                      files.isEmpty
+                          ? 'เลือกจากคลัง'
+                          : 'เลือกแล้ว ${files.length} รูป',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final file = await ImagePicker().pickImage(
+                        source: ImageSource.camera,
+                        imageQuality: 70,
+                        maxWidth: 1200,
+                      );
+                      if (file != null) {
+                        files = [...files, file];
+                        setState(() {});
+                      }
+                    },
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('ถ่ายรูป'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

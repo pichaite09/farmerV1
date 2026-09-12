@@ -159,7 +159,7 @@ class _ActivitiesScreenState extends State<ActivitiesScreen> {
                     PopupMenuItem(value: 'delete', child: Text('ลบ')),
                   ],
                 ),
-                onTap: () => _imageAction(x),
+                onTap: () => _chooseImageSource(x),
               ),
             );
           },
@@ -173,9 +173,33 @@ class _ActivitiesScreenState extends State<ActivitiesScreen> {
     },
   );
 
-  Future<void> _imageAction(Activity activity) async {
+  Future<void> _chooseImageSource(Activity activity) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('ถ่ายรูปด้วยกล้อง'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('เลือกจากคลังรูปภาพ'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source != null) await _imageAction(activity, source);
+  }
+
+  Future<void> _imageAction(Activity activity, ImageSource source) async {
     final file = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
+      source: source,
       imageQuality: 50,
       maxWidth: 800,
     );
