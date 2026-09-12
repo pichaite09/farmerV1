@@ -136,18 +136,41 @@ class _ScheduleState extends State<ScheduleScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final files = await ImagePicker().pickMultiImage(
-                      imageQuality: 80,
-                      maxWidth: 1600,
-                    );
-                    if (files.isNotEmpty) {
-                      setDialogState(() => selected.addAll(files));
-                    }
-                  },
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                  label: const Text('เพิ่มรูปภาพ'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final files = await ImagePicker().pickMultiImage(
+                            imageQuality: 80,
+                            maxWidth: 1600,
+                          );
+                          if (files.isNotEmpty) {
+                            setDialogState(() => selected.addAll(files));
+                          }
+                        },
+                        icon: const Icon(Icons.add_photo_alternate_outlined),
+                        label: const Text('เลือกจากคลัง'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final file = await ImagePicker().pickImage(
+                            source: ImageSource.camera,
+                            imageQuality: 80,
+                            maxWidth: 1600,
+                          );
+                          if (file != null) {
+                            setDialogState(() => selected.add(file));
+                          }
+                        },
+                        icon: const Icon(Icons.camera_alt_outlined),
+                        label: const Text('ถ่ายรูปด้วยกล้อง'),
+                      ),
+                    ),
+                  ],
                 ),
                 if (selected.isNotEmpty) ...[
                   const SizedBox(height: 6),
