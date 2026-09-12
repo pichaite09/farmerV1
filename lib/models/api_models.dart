@@ -433,8 +433,11 @@ class ProductionCycleSummary {
 }
 
 class FarmerNotification {
-  final String id, taskId, taskName, cycleName, plotName, kind, title, body;
-  final DateTime dueDate, createdAt;
+  final String id, kind, title, body;
+  final String? taskId, taskName, cycleName, plotName;
+  final String? announcementImageId, announcementType;
+  final DateTime? dueDate;
+  final DateTime createdAt;
   final DateTime? readAt;
   const FarmerNotification({
     required this.id,
@@ -445,6 +448,8 @@ class FarmerNotification {
     required this.kind,
     required this.title,
     required this.body,
+    this.announcementImageId,
+    this.announcementType,
     required this.dueDate,
     required this.createdAt,
     this.readAt,
@@ -452,14 +457,16 @@ class FarmerNotification {
   factory FarmerNotification.fromJson(Map<String, dynamic> j) =>
       FarmerNotification(
         id: _s(_j(j, 'id')),
-        taskId: _s(_j(j, 'taskId')),
-        taskName: _s(_j(j, 'taskName')),
-        cycleName: _s(_j(j, 'cycleName')),
-        plotName: _s(_j(j, 'plotName')),
+        taskId: _j(j, 'taskId') == null ? null : _s(_j(j, 'taskId')),
+        taskName: _j(j, 'taskName') == null ? null : _s(_j(j, 'taskName')),
+        cycleName: _j(j, 'cycleName') == null ? null : _s(_j(j, 'cycleName')),
+        plotName: _j(j, 'plotName') == null ? null : _s(_j(j, 'plotName')),
         kind: _s(_j(j, 'kind')),
         title: _s(_j(j, 'title')),
         body: _s(_j(j, 'body')),
-        dueDate: _date(_j(j, 'dueDate')),
+        announcementImageId: _j(j, 'announcementImageId')?.toString(),
+        announcementType: _j(j, 'announcementType')?.toString(),
+        dueDate: _j(j, 'dueDate') == null ? null : _date(_j(j, 'dueDate')),
         createdAt: _date(_j(j, 'createdAt')),
         readAt: _j(j, 'readAt') == null ? null : _date(_j(j, 'readAt')),
       );

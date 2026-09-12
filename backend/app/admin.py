@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Literal
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select, update, literal, union_all
 from sqlalchemy.orm import Session
@@ -362,8 +362,13 @@ def _target_query(body: AnnouncementCreate, db: Session):
     return select(User.id).where(User.role == 'farmer', User.status == 'active')
 
 
-def _announcement_out(row, count=None):
-    return {k: getattr(row, k) for k in ('id', 'owner_id', 'target_type', 'target_role', 'title', 'body', 'status', 'created_at', 'queued_at', 'sent_at', 'cancelled_at')} | {'target_count': count}
+def _announcement_out(row, count=None, db=None):
+    image = db.get(Attachment, row.image_attachment_id) if db is not None and row.image_attachment_id else None
+    return {k: getattr(row, k) for k in ('id', 'owner_id', 'target_type', 'target_role', 'title', 'body', 'status', 'created_at', 'queued_at', 'sent_at', 'cancelled_at')} | {
+        'type': row.announcement_type, 'image_id': row.image_attachment_id,
+        'image_content_type': getattr(image, 'content_type', None),
+        'image_size_bytes': getattr(image, 'size_bytes', None), 'target_count': count,
+    }
 
 
 @router.post('/announcements/preview')
@@ -375,17 +380,17 @@ def preview_announcement(body: AnnouncementCreate, identity=Depends(admin_sessio
 def create_announcement(body: AnnouncementCreate, identity=Depends(admin_session), db: Session = Depends(get_db)):
     _target_query(body, db)
     row = Announcement(owner_id=identity[1].id, target_type=body.target_type, target_role=body.role, target_user_ids=[str(x) for x in body.user_ids] or None,
-                       title=body.title, body=body.body)
+                       title=body.title, body=body.body, announcement_type=body.type)
     db.add(row); db.flush()
     _audit(db, identity[1].id, 'announcement_created', 'announcement', row.id, {'targetType': body.target_type})
     db.commit(); db.refresh(row)
-    return _announcement_out(row, db.scalar(select(func.count()).select_from(_target_query(body, db).subquery())))
+    return _announcement_out(row, db.scalar(select(func.count()).select_from(_target_query(body, db).subquery())), db)
 
 
 @router.get('/announcements', response_model=list[AnnouncementOut])
 def list_announcements(identity=Depends(admin_session), db: Session = Depends(get_db)):
     rows = db.scalars(select(Announcement).where(Announcement.owner_id == identity[1].id).order_by(Announcement.created_at.desc(), Announcement.id.desc())).all()
-    return [_announcement_out(row, db.scalar(select(func.count(AnnouncementRecipient.id)).where(AnnouncementRecipient.announcement_id == row.id))) for row in rows]
+    return [_announcement_out(row, db.scalar(select(func.count(AnnouncementRecipient.id)).where(AnnouncementRecipient.announcement_id == row.id)), db) for row in rows]
 
 
 def _owned_announcement(announcement_id, owner_id, db):
@@ -397,7 +402,7 @@ def _owned_announcement(announcement_id, owner_id, db):
 @router.get('/announcements/{announcement_id}', response_model=AnnouncementOut)
 def get_announcement(announcement_id: uuid.UUID, identity=Depends(admin_session), db: Session = Depends(get_db)):
     row = _owned_announcement(announcement_id, identity[1].id, db)
-    return _announcement_out(row, db.scalar(select(func.count(AnnouncementRecipient.id)).where(AnnouncementRecipient.announcement_id == row.id)))
+    return _announcement_out(row, db.scalar(select(func.count(AnnouncementRecipient.id)).where(AnnouncementRecipient.announcement_id == row.id)), db)
 
 
 @router.post('/announcements/{announcement_id}/send', response_model=AnnouncementOut)
@@ -435,7 +440,7 @@ def cancel_announcement(announcement_id: uuid.UUID, identity=Depends(admin_sessi
     db.execute(update(Notification).where(Notification.announcement_id == row.id, Notification.dismissed_at.is_(None)).values(dismissed_at=row.cancelled_at))
     _audit(db, identity[1].id, 'announcement_cancelled', 'announcement', row.id)
     db.commit(); db.refresh(row)
-    return _announcement_out(row, db.scalar(select(func.count(AnnouncementRecipient.id)).where(AnnouncementRecipient.announcement_id == row.id)))
+    return _announcement_out(row, db.scalar(select(func.count(AnnouncementRecipient.id)).where(AnnouncementRecipient.announcement_id == row.id)), db)
 
 
 @router.get('/announcements/{announcement_id}/delivery-summary', response_model=AnnouncementSummaryOut)
@@ -644,3 +649,37 @@ def list_audit_logs(action: str | None = Query(None, max_length=64), target_type
     total = int(db.scalar(select(func.count()).select_from(query.subquery())) or 0)
     rows = db.scalars(query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit).offset(offset)).all()
     return {'limit': limit, 'offset': offset, 'total': total, 'items': [{'id': r.id, 'actorId': r.actor_id, 'action': r.action, 'targetType': r.target_type, 'targetId': r.target_id, 'metadata': r.metadata_json, 'createdAt': r.created_at} for r in rows]}
+
+
+@router.post('/announcements/{announcement_id}/image', status_code=201)
+def upload_announcement_image(announcement_id: uuid.UUID, file: UploadFile = File(...), identity=Depends(admin_session), db: Session = Depends(get_db)):
+    from app.attachments import ALLOWED, MAX_SIZE, _signature_kind, _storage_dir
+    row = _owned_announcement(announcement_id, identity[1].id, db)
+    if row.status != 'draft':
+        raise HTTPException(409, 'Only draft announcements can receive an image')
+    if row.image_attachment_id:
+        raise HTTPException(409, 'Announcement already has an image')
+    suffix = Path(Path(file.filename or '').name).suffix.lower()
+    expected = ALLOWED.get(suffix)
+    if expected is None:
+        raise HTTPException(415, 'Unsupported image extension')
+    storage_dir = _storage_dir(); temp = storage_dir / f'.{uuid.uuid4().hex}.upload'; final = None; total = 0; prefix = b''
+    try:
+        with temp.open('wb') as output:
+            while chunk := file.file.read(1024 * 1024):
+                if total == 0: prefix = chunk[:32]
+                total += len(chunk)
+                if total > MAX_SIZE: raise HTTPException(413, 'Image exceeds 10 MiB limit')
+                output.write(chunk)
+        if _signature_kind(prefix) != expected[1]: raise HTTPException(415, 'Image signature does not match extension')
+        storage_name = f'{uuid.uuid4().hex}{suffix}'; final = storage_dir / storage_name; temp.replace(final)
+        attachment = Attachment(owner_id=row.owner_id, parent_type='announcement', parent_id=row.id, storage_name=storage_name, content_type=expected[0], size_bytes=total)
+        db.add(attachment); db.flush(); row.image_attachment_id = attachment.id
+        db.commit(); db.refresh(attachment)
+        return {'id': attachment.id, 'contentType': attachment.content_type, 'sizeBytes': attachment.size_bytes}
+    except HTTPException:
+        temp.unlink(missing_ok=True); (final.unlink(missing_ok=True) if final else None); raise
+    except Exception:
+        db.rollback(); temp.unlink(missing_ok=True); (final.unlink(missing_ok=True) if final else None); raise
+    finally:
+        file.file.close()

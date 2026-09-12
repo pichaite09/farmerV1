@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/admin_models.dart';
 import '../models/api_models.dart';
 import '../services/api_session.dart';
@@ -1823,6 +1824,24 @@ class _AnnouncementsState extends State<AdminAnnouncementsPage> {
     ),
   );
   Future<void> _send(AdminAnnouncement a) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('ยืนยันการส่งประกาศ'),
+        content: Text('ส่ง “${a.title}” ให้ผู้รับ ${a.targetCount} คนหรือไม่?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('ยกเลิก'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('ยืนยันส่ง'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     setState(() => sending = a.id);
     try {
       await widget.api.sendAnnouncement(a.id);
@@ -1842,6 +1861,7 @@ class _AnnouncementsState extends State<AdminAnnouncementsPage> {
     body.clear();
     selectedIds.clear();
     var saving = false;
+    XFile? picked;
     await showDialog(
       context: context,
       builder: (_) => StatefulBuilder(
@@ -1867,6 +1887,33 @@ class _AnnouncementsState extends State<AdminAnnouncementsPage> {
                   maxLines: 4,
                   decoration: const InputDecoration(labelText: 'เนื้อหา'),
                 ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final file = await ImagePicker().pickImage(
+                      source: ImageSource.gallery,
+                    );
+                    if (file != null) setDialogState(() => picked = file);
+                  },
+                  icon: const Icon(Icons.image_outlined),
+                  label: Text(
+                    picked == null ? 'แนบรูปภาพ (ไม่บังคับ)' : 'เปลี่ยนรูปภาพ',
+                  ),
+                ),
+                if (picked != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: FutureBuilder<Uint8List>(
+                      future: picked!.readAsBytes(),
+                      builder: (_, snapshot) => snapshot.hasData
+                          ? Image.memory(
+                              snapshot.data!,
+                              height: 120,
+                              fit: BoxFit.cover,
+                            )
+                          : const SizedBox(height: 120),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1900,6 +1947,7 @@ class _AnnouncementsState extends State<AdminAnnouncementsPage> {
                           if (ids.isNotEmpty) 'userIds': ids,
                           'title': title.text.trim(),
                           'body': body.text.trim(),
+                          'type': 'info',
                         };
                         final preview = await widget.api.previewAnnouncement(
                           payload,
@@ -1933,7 +1981,14 @@ class _AnnouncementsState extends State<AdminAnnouncementsPage> {
                           ),
                         );
                         if (ok == true) {
-                          await widget.api.createAnnouncement(payload);
+                          final created = await widget.api.createAnnouncement(
+                            payload,
+                          );
+                          if (picked != null)
+                            await widget.api.uploadAnnouncementImage(
+                              created.id,
+                              picked!,
+                            );
                           if (mounted) {
                             Navigator.pop(context);
                             refresh();

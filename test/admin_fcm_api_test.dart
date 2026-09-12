@@ -31,6 +31,20 @@ class _CaptureClient extends http.BaseClient {
   }
 }
 
+class _ImageClient extends http.BaseClient {
+  late http.BaseRequest request;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest value) async {
+    request = value;
+    return http.StreamedResponse(
+      Stream.value([1, 2, 3]),
+      200,
+      request: value,
+      headers: {'content-type': 'image/png'},
+    );
+  }
+}
+
 void main() {
   test(
     'admin test notification API method is typed and sends contract',
@@ -45,7 +59,6 @@ void main() {
             title: 'หัวข้อ',
             body: 'ข้อความ',
           );
-
       expect(result, isA<AdminTestNotificationResult>());
       expect(result.attempted, 2);
       expect(result.sent, 2);
@@ -58,6 +71,36 @@ void main() {
         'title': 'หัวข้อ',
         'body': 'ข้อความ',
       });
+    },
+  );
+
+  test(
+    'announcement model keeps typed image metadata and authenticated image bytes use private endpoint',
+    () async {
+      final model = AdminAnnouncement.fromJson({
+        'id': 'a1',
+        'title': 'แจ้ง',
+        'body': 'ข้อความ',
+        'type': 'urgent',
+        'targetType': 'all',
+        'targetCount': 2,
+        'announcementImageId': 'img-1',
+      });
+      expect(model.type, 'urgent');
+      expect(model.imageId, 'img-1');
+      final client = _ImageClient();
+      final api = FarmerApi(baseUrl: 'https://staging.invalid', client: client)
+        ..token = 'session-token';
+      final bytes = await api.notificationImageBytes('notification-1');
+      expect(bytes, [1, 2, 3]);
+      expect(
+        client.request.url.path,
+        '/api/v1/notifications/notification-1/image',
+      );
+      expect(
+        (client.request as http.Request).headers['authorization'],
+        'Bearer session-token',
+      );
     },
   );
 }

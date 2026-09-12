@@ -172,6 +172,8 @@ class Announcement(Base):
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    image_attachment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('attachments.id', ondelete='SET NULL'), index=True)
+    announcement_type: Mapped[str] = mapped_column(String(32), default='info', server_default='info')
 
 class AnnouncementRecipient(Base):
     __tablename__ = 'announcement_recipients'

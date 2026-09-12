@@ -172,7 +172,7 @@ def live():
 def ready():
     try:
         with engine.connect() as conn:
-            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0022_fcm_device_tokens'
+            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0024_announce_attach'
             conn.execute(text('SELECT id FROM users LIMIT 1'))
     except Exception:
         raise HTTPException(503, 'Database not ready')

@@ -232,11 +232,12 @@ class TaskOut(APIModel):
     field_inspection_id: uuid.UUID | None = None
     is_automatic_follow_up: bool = False
 class NotificationOut(APIModel):
-    id:uuid.UUID;task_id:uuid.UUID|None;task_name:str|None=None;cycle_name:str|None=None;plot_name:str|None=None;due_date:DateType|None;kind:str;title:str;body:str;created_at:datetime;read_at:datetime|None
+    id:uuid.UUID;task_id:uuid.UUID|None;task_name:str|None=None;cycle_name:str|None=None;plot_name:str|None=None;due_date:DateType|None;kind:str;title:str;body:str;created_at:datetime;read_at:datetime|None;announcement_image_id: uuid.UUID|None = None; announcement_type: str|None = None
 
 class AnnouncementCreate(APIModel):
     title: str
     body: str
+    type: Literal['info', 'urgent', 'warning'] = 'info'
     target_type: Literal['all', 'selected', 'role']
     user_ids: list[uuid.UUID] = []
     role: Literal['farmer'] | None = None
@@ -254,7 +255,7 @@ class AnnouncementCreate(APIModel):
 AnnouncementStatus = Literal['draft', 'queued', 'sending', 'sent', 'completed', 'cancelled']
 
 class AnnouncementOut(APIModel):
-    id: uuid.UUID;owner_id: uuid.UUID;target_type: str;target_role: str|None;title: str;body: str;status: AnnouncementStatus;created_at: datetime;queued_at: datetime|None;sent_at: datetime|None;cancelled_at: datetime|None;target_count: int|None=None
+    id: uuid.UUID;owner_id: uuid.UUID;target_type: str;target_role: str|None;title: str;body: str;type: str;image_id: uuid.UUID|None=None;image_content_type: str|None=None;image_size_bytes: int|None=None;status: AnnouncementStatus;created_at: datetime;queued_at: datetime|None;sent_at: datetime|None;cancelled_at: datetime|None;target_count: int|None=None
 
 class AnnouncementSummaryOut(APIModel):
     announcement_id: uuid.UUID;status: AnnouncementStatus;total: int;pending: int;sent: int;failed: int;suppressed: int

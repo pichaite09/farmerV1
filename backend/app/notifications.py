@@ -1,15 +1,18 @@
 """In-app reminders for tasks that are due tomorrow."""
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.database import settings
 from app.main import farmer_session
-from app.models import Notification, Task, ProductionCycle, Plot
+from app.models import Notification, Task, ProductionCycle, Plot, Attachment, Announcement
 from app.schemas import NotificationOut
 
 router = APIRouter(prefix='/api/v1')
@@ -69,10 +72,11 @@ def list_notifications(
     owner_id = identity[1].id
     generate_daily_reminders(db, owner_id=owner_id)
     rows = db.execute(
-        select(Notification, Task.name, ProductionCycle.name, Plot.name)
+        select(Notification, Task.name, ProductionCycle.name, Plot.name, Announcement.image_attachment_id, Announcement.announcement_type)
         .outerjoin(Task, Task.id == Notification.task_id)
         .outerjoin(ProductionCycle, ProductionCycle.id == Task.cycle_id)
         .outerjoin(Plot, Plot.id == ProductionCycle.plot_id)
+        .outerjoin(Announcement, Announcement.id == Notification.announcement_id)
         .where(Notification.owner_id == owner_id, Notification.dismissed_at.is_(None))
         .order_by(Notification.created_at.desc(), Notification.id.desc())
     ).all()
@@ -89,8 +93,10 @@ def list_notifications(
             'body': notification.body,
             'created_at': notification.created_at,
             'read_at': notification.read_at,
+            'announcement_image_id': image_id,
+            'announcement_type': announcement_type,
         }
-        for notification, task_name, cycle_name, plot_name in rows
+        for notification, task_name, cycle_name, plot_name, image_id, announcement_type in rows
     ]
 
 
@@ -133,3 +139,13 @@ def clear_read_notifications(
     )
     db.commit()
     return None
+
+
+@router.get('/notifications/{notification_id}/image')
+def notification_image(notification_id: uuid.UUID, identity=Depends(farmer_session), db: Session = Depends(get_db)):
+    attachment = db.scalar(select(Attachment).join(Announcement, Announcement.image_attachment_id == Attachment.id).join(Notification, Notification.announcement_id == Announcement.id).where(Notification.id == notification_id, Notification.owner_id == identity[1].id, Attachment.parent_type == 'announcement'))
+    if attachment is None: raise HTTPException(404, 'Notification image not found')
+    root = Path(settings.attachment_storage_path).resolve()
+    path = (root / attachment.storage_name).resolve()
+    if root not in path.parents or not path.is_file(): raise HTTPException(404, 'Notification image not found')
+    return FileResponse(path, media_type=attachment.content_type)

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/api_models.dart';
@@ -89,8 +90,30 @@ class _NotificationScreenState extends State<NotificationScreen> {
         context: context,
         builder: (_) => AlertDialog(
           title: Text(updated.title),
-          content: SelectableText(
-            'รายละเอียด\n${updated.body}\n\nงาน: ${updated.taskName}\nแปลง: ${updated.plotName}\nรอบการผลิต: ${updated.cycleName}\nกำหนดวันที่: ${DateFormat('d MMMM y', 'th').format(updated.dueDate)}',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (updated.announcementType != null)
+                SelectableText('รายละเอียด\n${updated.body}')
+              else
+                SelectableText(
+                  'รายละเอียด\n${updated.body}\n\nงาน: ${updated.taskName ?? '-'}\nแปลง: ${updated.plotName ?? '-'}\nรอบการผลิต: ${updated.cycleName ?? '-'}\nกำหนดวันที่: ${updated.dueDate == null ? '-' : DateFormat('d MMMM y', 'th').format(updated.dueDate!)}',
+                ),
+              if (updated.announcementImageId != null) ...[
+                const SizedBox(height: 12),
+                FutureBuilder<Uint8List>(
+                  future: context.read<ApiSession>().api.notificationImageBytes(
+                    updated.id,
+                  ),
+                  builder: (_, image) => image.hasError
+                      ? const Text('เปิดรูปภาพประกาศไม่สำเร็จ')
+                      : image.hasData
+                      ? Image.memory(image.data!, fit: BoxFit.contain)
+                      : const Center(child: CircularProgressIndicator()),
+                ),
+              ],
+            ],
           ),
           actions: [
             TextButton(
@@ -227,7 +250,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                   ),
                                 ),
                                 subtitle: Text(
-                                  '${item.body}\nแปลง: ${item.plotName} • รอบการผลิต: ${item.cycleName}\nกำหนดวันที่ ${dateFormat.format(item.dueDate)}',
+                                  item.announcementType != null
+                                      ? item.body
+                                      : '${item.body}\nแปลง: ${item.plotName ?? '-'} • รอบการผลิต: ${item.cycleName ?? '-'}\nกำหนดวันที่ ${item.dueDate == null ? '-' : dateFormat.format(item.dueDate!)}',
                                 ),
                                 isThreeLine: true,
                                 trailing: const Icon(Icons.chevron_right),

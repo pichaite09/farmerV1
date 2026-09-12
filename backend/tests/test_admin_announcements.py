@@ -3,7 +3,7 @@ import pytest
 from sqlalchemy import select, text
 from app.database import engine
 from app.database import SessionLocal
-from app.models import Announcement, AnnouncementRecipient, Notification, PushOutbox, User
+from app.models import Announcement, AnnouncementRecipient, Notification, PushOutbox, User, Attachment
 from app.push import MAX_ATTEMPTS, claim_push_outbox, deliver_claimed
 
 
@@ -208,3 +208,45 @@ def test_multi_subscription_failure_does_not_finalize_recipient_or_announcement(
         announcement = db.get(Announcement, uuid.UUID(aid))
         assert recipient.status == 'sent'
         assert announcement.status == 'sent'
+
+
+
+def test_announcement_image_is_private_metadata_and_farmer_owner_scoped(client):
+    farmer = register(client); other = register(client); admin = register(client)
+    admin_auth = admin_headers(client, admin)
+    farmer_auth = {'Authorization': 'Bearer ' + farmer['access_token']}
+    other_auth = {'Authorization': 'Bearer ' + other['access_token']}
+    body = {'title': 'รูปภาพ', 'body': 'รายละเอียด', 'type': 'urgent', 'targetType': 'selected', 'userIds': [farmer['user']['id']]}
+    announcement = client.post('/api/v1/admin/announcements', headers=admin_auth, json=body)
+    assert announcement.status_code == 201, announcement.text
+    image = client.post(f"/api/v1/admin/announcements/{announcement.json()['id']}/image", headers=admin_auth, files={'file': ('notice.png', b'\x89PNG\r\n\x1a\n' + b'0' * 20, 'image/png')})
+    assert image.status_code == 201, image.text
+    assert image.json()['contentType'] == 'image/png'
+    assert 'contentUrl' not in image.json()
+    sent = client.post(f"/api/v1/admin/announcements/{announcement.json()['id']}/send", headers=admin_auth)
+    assert sent.status_code == 200
+    notification = client.get('/api/v1/notifications', headers=farmer_auth)
+    assert notification.json()[0]['announcementImageId'] == image.json()['id']
+    content = client.get(f"/api/v1/notifications/{notification.json()[0]['id']}/image", headers=farmer_auth)
+    assert content.status_code == 200 and content.headers['content-type'].startswith('image/png')
+    assert client.get(f"/api/v1/notifications/{notification.json()[0]['id']}/image", headers=other_auth).status_code == 404
+    with SessionLocal() as db:
+        attachment = db.get(Attachment, uuid.UUID(image.json()['id']))
+        assert attachment.parent_type == 'announcement' and attachment.owner_id == uuid.UUID(admin['user']['id'])
+
+
+def test_fcm_announcement_payload_carries_private_image_id(client):
+    farmer = register(client); admin = register(client)
+    admin_auth = admin_headers(client, admin)
+    farmer_auth = {'Authorization': 'Bearer ' + farmer['access_token']}
+    token = client.post('/api/v1/devices/push-token', headers=farmer_auth, json={'token': 'fixture-fcm-token-1234567890'})
+    assert token.status_code in (201, 200), token.text
+    body = {'title': 'ประกาศ', 'body': 'ข้อความ', 'type': 'info', 'targetType': 'selected', 'userIds': [farmer['user']['id']]}
+    aid = client.post('/api/v1/admin/announcements', headers=admin_auth, json=body).json()['id']
+    image = client.post(f'/api/v1/admin/announcements/{aid}/image', headers=admin_auth, files={'file': ('a.jpg', b'\xff\xd8\xff' + b'0' * 20, 'image/jpeg')})
+    assert image.status_code == 201, image.text
+    sent = client.post(f'/api/v1/admin/announcements/{aid}/send', headers=admin_auth)
+    assert sent.status_code == 200
+    with SessionLocal() as db:
+        outbox = db.scalar(select(PushOutbox).join(Notification, Notification.id == PushOutbox.notification_id).where(Notification.announcement_id == uuid.UUID(aid)))
+        assert outbox.payload['announcementImageId'] == image.json()['id']

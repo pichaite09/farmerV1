@@ -93,6 +93,9 @@ def enqueue_push_outbox(db: Session, notifications: list[Notification] | None = 
             continue
         payload = {'notificationId': str(notification.id), 'title': notification.title,
                    'body': notification.body, 'url': '/#/notifications'}
+        if announcement is not None and announcement.image_attachment_id:
+            payload['announcementImageId'] = str(announcement.image_attachment_id)
+            payload['announcementType'] = announcement.announcement_type
         subscriptions = db.scalars(select(PushSubscription).join(User, User.id == PushSubscription.owner_id).where(
             PushSubscription.owner_id == notification.owner_id, User.status == 'active',
         )).all()

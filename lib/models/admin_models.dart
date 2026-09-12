@@ -77,7 +77,8 @@ class AdminTestNotificationDelivery {
 }
 
 class AdminAnnouncement {
-  final String id, title, body, status, targetType;
+  final String id, title, body, status, targetType, type;
+  final String? imageId;
   final int targetCount;
   final DateTime? createdAt, sentAt, cancelledAt;
   const AdminAnnouncement({
@@ -86,29 +87,38 @@ class AdminAnnouncement {
     required this.body,
     required this.status,
     required this.targetType,
+    required this.type,
+    this.imageId,
     required this.targetCount,
     this.createdAt,
     this.sentAt,
     this.cancelledAt,
   });
-  factory AdminAnnouncement.fromJson(Map<String, dynamic> j) =>
-      AdminAnnouncement(
-        id: '${j['id'] ?? ''}',
-        title: '${j['title'] ?? ''}',
-        body: '${j['body'] ?? ''}',
-        status: '${j['status'] ?? ''}',
-        targetType: '${j['targetType'] ?? j['target_type'] ?? ''}',
-        targetCount: (j['targetCount'] ?? j['target_count'] as num?) is num
-            ? ((j['targetCount'] ?? j['target_count']) as num).toInt()
-            : 0,
-        createdAt: DateTime.tryParse(
-          '${j['createdAt'] ?? j['created_at'] ?? ''}',
-        ),
-        sentAt: DateTime.tryParse('${j['sentAt'] ?? j['sent_at'] ?? ''}'),
-        cancelledAt: DateTime.tryParse(
-          '${j['cancelledAt'] ?? j['cancelled_at'] ?? ''}',
-        ),
-      );
+  factory AdminAnnouncement.fromJson(
+    Map<String, dynamic> j,
+  ) => AdminAnnouncement(
+    id: '${j['id'] ?? ''}',
+    title: '${j['title'] ?? ''}',
+    body: '${j['body'] ?? ''}',
+    status: '${j['status'] ?? ''}',
+    targetType: '${j['targetType'] ?? j['target_type'] ?? ''}',
+    type:
+        '${j['type'] ?? j['announcementType'] ?? j['announcement_type'] ?? 'info'}',
+    imageId:
+        (j['imageId'] ??
+                j['image_id'] ??
+                j['announcementImageId'] ??
+                j['image_attachment_id'])
+            ?.toString(),
+    targetCount: (j['targetCount'] ?? j['target_count'] as num?) is num
+        ? ((j['targetCount'] ?? j['target_count']) as num).toInt()
+        : 0,
+    createdAt: DateTime.tryParse('${j['createdAt'] ?? j['created_at'] ?? ''}'),
+    sentAt: DateTime.tryParse('${j['sentAt'] ?? j['sent_at'] ?? ''}'),
+    cancelledAt: DateTime.tryParse(
+      '${j['cancelledAt'] ?? j['cancelled_at'] ?? ''}',
+    ),
+  );
 }
 
 class AdminAuditLog {

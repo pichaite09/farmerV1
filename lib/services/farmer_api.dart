@@ -503,6 +503,20 @@ class FarmerApi {
   );
   Future<List<FarmerNotification>> notifications() =>
       list('/notifications', FarmerNotification.fromJson);
+  Future<Uint8List> notificationImageBytes(String notificationId) async {
+    final request = http.Request(
+      'GET',
+      Uri.parse('$baseUrl/api/v1/notifications/$notificationId/image'),
+    );
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    final response = await client.send(request);
+    final bytes = await response.stream.toBytes();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(response.statusCode, 'โหลดรูปภาพประกาศไม่สำเร็จ');
+    }
+    return Uint8List.fromList(bytes);
+  }
+
   Future<FarmerNotification> markNotificationRead(String id) => _request(
     'PATCH',
     '/notifications/$id/read',
@@ -691,6 +705,29 @@ class FarmerApi {
     'POST',
     '/admin/announcements/$id/send',
   ).then((v) => AdminAnnouncement.fromJson(_map(v)));
+  Future<Map<String, dynamic>> uploadAnnouncementImage(
+    String id,
+    XFile file,
+  ) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/v1/admin/announcements/$id/image'),
+    );
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'file',
+        await file.readAsBytes(),
+        filename: file.name,
+      ),
+    );
+    final response = await client.send(request);
+    final text = await response.stream.bytesToString();
+    if (response.statusCode < 200 || response.statusCode >= 300)
+      throw ApiException(response.statusCode, 'อัปโหลดรูปภาพไม่สำเร็จ');
+    return _map(jsonDecode(text));
+  }
+
   Future<AdminAnnouncement> cancelAnnouncement(String id) => _request(
     'POST',
     '/admin/announcements/$id/cancel',
