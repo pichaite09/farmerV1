@@ -6,6 +6,7 @@ import 'package:farmer/models/api_models.dart';
 
 // Synthetic data only. Not imported by lib/main.dart or production builds.
 class AdminFixtureApi extends FarmerApi {
+  bool testNotificationCalled = false;
   String? requestedType, requestedOwner;
   int requestedOffset = 0;
   @override
@@ -148,6 +149,27 @@ class AdminFixtureApi extends FarmerApi {
       transactions: byType['transaction']!,
       fuelRecords: byType['fuel_record']!,
       timeline: children,
+    );
+  }
+
+  @override
+  Future<AdminTestNotificationResult> adminSendTestNotification({
+    required String userId,
+    required String title,
+    required String body,
+  }) async {
+    testNotificationCalled = true;
+    return const AdminTestNotificationResult(
+      targetUserId: 'synthetic-farmer',
+      attempted: 1,
+      sent: 1,
+      failed: 0,
+      results: [
+        AdminTestNotificationDelivery(
+          deviceId: 'fixture-device',
+          status: 'sent',
+        ),
+      ],
     );
   }
 

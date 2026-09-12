@@ -306,6 +306,27 @@ class CategoriesOut(APIModel):
     activity_categories:list[str];expense_categories:list[str];income_categories:list[str];soil_types:list[str];planting_types:list[str];crop_types:list[str];vehicle_categories:list[str]
 class CategoryUpdate(APIModel): values:list[str]
 
+class AdminTestNotificationCreate(APIModel):
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=2000)
+
+    @field_validator('title', 'body')
+    @classmethod
+    def nonblank(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError('must not be blank')
+        return value
+
+
+class AdminTestNotificationOut(APIModel):
+    target_user_id: uuid.UUID
+    attempted: int
+    sent: int
+    failed: int
+    results: list[dict[str, str]]
+
+
 class AdminUserPatch(APIModel):
     first_name: str | None = None
     last_name: str | None = None

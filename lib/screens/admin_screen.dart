@@ -574,6 +574,24 @@ class _UsersState extends State<AdminUsersPage> {
     }
   }
 
+  Future<void> _sendTestNotification(ApiUser user) async {
+    if (mutating != null) return;
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (_) => _TestNotificationDialog(
+        onSend: (title, body) => widget.api.adminSendTestNotification(
+          userId: user.id,
+          title: title,
+          body: body,
+        ),
+      ),
+    );
+    if (!mounted || sent != true) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('ส่งข้อความทดสอบสำเร็จ')));
+  }
+
   @override
   Widget build(BuildContext context) => _Page(
     title: 'ผู้ใช้งาน',
@@ -664,58 +682,200 @@ class _UsersState extends State<AdminUsersPage> {
   Widget _userCard(ApiUser u) {
     final suspended = u.status == 'suspended';
     final self = u.id == widget.currentUserId;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: _Dot(color: suspended ? Colors.redAccent : _emerald),
-        title: Text(
-          _personName({
-            'firstName': u.firstName,
-            'lastName': u.lastName,
-            'email': u.email,
-          }),
+    Future<void> toggleStatus() async {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(suspended ? 'เปิดใช้งานผู้ใช้งาน?' : 'ระงับผู้ใช้งาน?'),
+          content: Text(
+            suspended
+                ? 'บัญชีนี้จะกลับมาใช้งานได้'
+                : 'บัญชีนี้จะไม่สามารถเข้าสู่ระบบได้',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('ยกเลิก'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('ยืนยัน'),
+            ),
+          ],
         ),
-        subtitle: Text(
-          '${u.role == 'admin' ? 'ผู้ดูแลระบบ' : 'เกษตรกร'}  •  ${suspended ? 'ระงับ' : 'ใช้งาน'}',
-          style: const TextStyle(color: _muted),
+      );
+      if (ok == true && mounted) _toggle(u);
+    }
+
+    final actions = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      alignment: WrapAlignment.end,
+      children: [
+        OutlinedButton.icon(
+          onPressed: suspended || mutating != null
+              ? null
+              : () => _sendTestNotification(u),
+          icon: const Icon(Icons.notifications_none),
+          label: const Text('ส่งข้อความทดสอบ'),
         ),
-        trailing: IconButton(
+        IconButton(
           tooltip: self
               ? 'ไม่สามารถระงับบัญชีที่กำลังใช้งานได้'
               : 'เปลี่ยนสถานะ',
-          onPressed: self || mutating != null
-              ? null
-              : () async {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: Text(
-                        suspended ? 'เปิดใช้งานผู้ใช้งาน?' : 'ระงับผู้ใช้งาน?',
-                      ),
-                      content: Text(
-                        suspended
-                            ? 'บัญชีนี้จะกลับมาใช้งานได้'
-                            : 'บัญชีนี้จะไม่สามารถเข้าสู่ระบบได้',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('ยกเลิก'),
-                        ),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('ยืนยัน'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (ok == true) _toggle(u);
-                },
+          onPressed: self || mutating != null ? null : toggleStatus,
           icon: Icon(suspended ? Icons.lock_open : Icons.block),
         ),
+      ],
+    );
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < 620;
+          final details = ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: _Dot(color: suspended ? Colors.redAccent : _emerald),
+            title: Text(
+              _personName({
+                'firstName': u.firstName,
+                'lastName': u.lastName,
+                'email': u.email,
+              }),
+            ),
+            subtitle: Text(
+              '${u.role == 'admin' ? 'ผู้ดูแลระบบ' : 'เกษตรกร'}  •  ${suspended ? 'ระงับ' : 'ใช้งาน'}',
+              style: const TextStyle(color: _muted),
+            ),
+          );
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: narrow
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      details,
+                      Align(alignment: Alignment.centerRight, child: actions),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(child: details),
+                      actions,
+                    ],
+                  ),
+          );
+        },
       ),
     );
   }
+}
+
+class _TestNotificationDialog extends StatefulWidget {
+  final Future<AdminTestNotificationResult> Function(String title, String body)
+  onSend;
+  const _TestNotificationDialog({required this.onSend});
+  @override
+  State<_TestNotificationDialog> createState() =>
+      _TestNotificationDialogState();
+}
+
+class _TestNotificationDialogState extends State<_TestNotificationDialog> {
+  final title = TextEditingController();
+  final body = TextEditingController();
+  bool loading = false;
+  String? error;
+
+  @override
+  void dispose() {
+    title.dispose();
+    body.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final titleText = title.text.trim();
+    final bodyText = body.text.trim();
+    if (titleText.isEmpty || titleText.length > 200) {
+      setState(() => error = 'กรุณากรอกหัวข้อไม่เกิน 200 ตัวอักษร');
+      return;
+    }
+    if (bodyText.isEmpty || bodyText.length > 2000) {
+      setState(() => error = 'กรุณากรอกข้อความไม่เกิน 2,000 ตัวอักษร');
+      return;
+    }
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      await widget.onSend(titleText, bodyText);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      final message = e is ApiException && e.statusCode == 422
+          ? 'ผู้ใช้งานนี้ยังไม่มีอุปกรณ์ที่พร้อมรับข้อความ'
+          : e is ApiException && e.statusCode == 409
+          ? 'ผู้ใช้งานนี้ไม่ได้อยู่ในสถานะใช้งาน'
+          : 'ส่งข้อความทดสอบไม่สำเร็จ';
+      if (mounted) setState(() => error = message);
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('ส่งข้อความทดสอบ'),
+    content: SizedBox(
+      width: 420,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: title,
+            enabled: !loading,
+            maxLength: 200,
+            decoration: const InputDecoration(labelText: 'หัวข้อ'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: body,
+            enabled: !loading,
+            maxLength: 2000,
+            maxLines: 4,
+            decoration: const InputDecoration(labelText: 'ข้อความ'),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                error!,
+                style: const TextStyle(color: Colors.redAccent),
+              ),
+            ),
+          ],
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: loading ? null : () => Navigator.pop(context, false),
+        child: const Text('ยกเลิก'),
+      ),
+      FilledButton.icon(
+        onPressed: loading ? null : _submit,
+        icon: loading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.send),
+        label: Text(loading ? 'กำลังส่ง...' : 'ส่ง'),
+      ),
+    ],
+  );
 }
 
 Widget _drop(

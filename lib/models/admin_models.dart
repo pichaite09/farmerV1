@@ -35,6 +35,47 @@ class AdminDashboard {
   }
 }
 
+class AdminTestNotificationResult {
+  final String targetUserId;
+  final int attempted, sent, failed;
+  final List<AdminTestNotificationDelivery> results;
+  const AdminTestNotificationResult({
+    required this.targetUserId,
+    required this.attempted,
+    required this.sent,
+    required this.failed,
+    required this.results,
+  });
+  factory AdminTestNotificationResult.fromJson(Map<String, dynamic> j) =>
+      AdminTestNotificationResult(
+        targetUserId: '${j['targetUserId'] ?? j['target_user_id'] ?? ''}',
+        attempted: (j['attempted'] as num?)?.toInt() ?? 0,
+        sent: (j['sent'] as num?)?.toInt() ?? 0,
+        failed: (j['failed'] as num?)?.toInt() ?? 0,
+        results: ((j['results'] as List?) ?? const [])
+            .whereType<Map>()
+            .map(
+              (v) => AdminTestNotificationDelivery.fromJson(
+                Map<String, dynamic>.from(v),
+              ),
+            )
+            .toList(),
+      );
+}
+
+class AdminTestNotificationDelivery {
+  final String deviceId, status;
+  const AdminTestNotificationDelivery({
+    required this.deviceId,
+    required this.status,
+  });
+  factory AdminTestNotificationDelivery.fromJson(Map<String, dynamic> j) =>
+      AdminTestNotificationDelivery(
+        deviceId: '${j['deviceId'] ?? j['device_id'] ?? ''}',
+        status: '${j['status'] ?? ''}',
+      );
+}
+
 class AdminAnnouncement {
   final String id, title, body, status, targetType;
   final int targetCount;

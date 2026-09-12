@@ -12,10 +12,14 @@ from app.database import get_db, settings
 from app.main import admin_session
 from app.models import (
     Activity, Attachment, FieldInspection, FuelRecord, Plot, ProductionCycle,
-    Task, Transaction, User, AuthSession, Notification, Vehicle, Announcement, AnnouncementRecipient, AuditLog,
+    Task, Transaction, User, AuthSession, Notification, Vehicle, Announcement, AnnouncementRecipient, AuditLog, FcmDeviceToken,
 )
-from app.schemas import AdminDashboardOut, AnnouncementCreate, AnnouncementOut, AnnouncementSummaryOut, AdminUserPatch
+from app.schemas import (
+    AdminDashboardOut, AnnouncementCreate, AnnouncementOut, AnnouncementSummaryOut,
+    AdminTestNotificationCreate, AdminTestNotificationOut, AdminUserPatch,
+)
 from app.push import enqueue_push_outbox
+from app.fcm import send_fcm
 
 router = APIRouter(prefix='/api/v1/admin', tags=['admin'])
 RecordType = Literal['activity', 'field_inspection', 'task', 'production_cycle', 'plot', 'transaction', 'fuel_record']
@@ -509,6 +513,60 @@ def get_admin_user(user_id: uuid.UUID, identity=Depends(admin_session), db: Sess
     user = db.get(User, user_id)
     if user is None: raise HTTPException(404, 'User not found')
     return _user_out(user)
+
+
+@router.post('/users/{user_id}/test-notification', response_model=AdminTestNotificationOut)
+def send_admin_test_notification(
+    user_id: uuid.UUID,
+    body: AdminTestNotificationCreate,
+    identity=Depends(admin_session),
+    db: Session = Depends(get_db),
+):
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, 'User not found')
+    if user.status != 'active':
+        raise HTTPException(409, 'Target user is not active')
+
+    devices = db.scalars(select(FcmDeviceToken).where(
+        FcmDeviceToken.owner_id == user.id,
+        FcmDeviceToken.active.is_(True),
+    ).order_by(FcmDeviceToken.id)).all()
+    if not devices:
+        raise HTTPException(422, 'Target user has no active device tokens')
+
+    payload = {'title': body.title, 'body': body.body, 'kind': 'admin_test'}
+    results = []
+    sent = 0
+    for device in devices:
+        try:
+            send_fcm(device.token, payload)
+        except Exception:
+            # Provider errors are intentionally reduced to a safe result.  In
+            # particular, never return the provider exception or device token.
+            results.append({'deviceId': str(device.id), 'status': 'failed'})
+        else:
+            sent += 1
+            results.append({'deviceId': str(device.id), 'status': 'sent'})
+
+    failed = len(devices) - sent
+    result = {
+        'targetUserId': user.id,
+        'attempted': len(devices),
+        'sent': sent,
+        'failed': failed,
+        'results': results,
+    }
+    if failed:
+        raise HTTPException(502, detail={
+            'code': 'fcm_provider_failure',
+            'message': 'One or more test notifications failed to send',
+            **result,
+        })
+    _audit(db, identity[1].id, 'admin_test_notification_sent', 'user', user.id,
+           {'attempted': len(devices), 'sent': sent})
+    db.commit()
+    return result
 
 
 @router.patch('/users/{user_id}')

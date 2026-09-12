@@ -604,6 +604,16 @@ class FarmerApi {
     return AdminPage.fromJson(v, adminUserFromJson);
   }
 
+  Future<AdminTestNotificationResult> adminSendTestNotification({
+    required String userId,
+    required String title,
+    required String body,
+  }) => _request(
+    'POST',
+    '/admin/users/$userId/test-notification',
+    body: {'title': title, 'body': body},
+  ).then((v) => AdminTestNotificationResult.fromJson(_map(v)));
+
   Future<ApiUser> adminUpdateUser(String id, Map<String, dynamic> body) =>
       _request(
         'PATCH',
