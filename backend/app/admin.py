@@ -538,12 +538,16 @@ def send_admin_test_notification(
     payload = {'title': body.title, 'body': body.body, 'kind': 'admin_test'}
     results = []
     sent = 0
+    invalidated = 0
     for device in devices:
         try:
             send_fcm(device.token, payload)
-        except Exception:
+        except Exception as exc:
             # Provider errors are intentionally reduced to a safe result.  In
             # particular, never return the provider exception or device token.
+            if type(exc).__name__ == 'SenderIdMismatchError':
+                device.active = False
+                invalidated += 1
             results.append({'deviceId': str(device.id), 'status': 'failed'})
         else:
             sent += 1
@@ -555,12 +559,17 @@ def send_admin_test_notification(
         'attempted': len(devices),
         'sent': sent,
         'failed': failed,
+        'invalidated': invalidated,
         'results': results,
     }
     if failed:
+        db.commit()
+        message = ('อุปกรณ์ลงทะเบียนกับ Firebase คนละโปรเจกต์ กรุณาออกจากระบบ'
+                   ' แล้วเข้าใหม่ด้วย APK ล่าสุด' if invalidated else
+                   'One or more test notifications failed to send')
         raise HTTPException(502, detail={
             'code': 'fcm_provider_failure',
-            'message': 'One or more test notifications failed to send',
+            'message': message,
             **result,
         })
     _audit(db, identity[1].id, 'admin_test_notification_sent', 'user', user.id,
