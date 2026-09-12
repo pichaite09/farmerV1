@@ -40,18 +40,18 @@ android {
             val storePassword = System.getenv("FARM_RELEASE_STORE_PASSWORD")
             val keyAlias = System.getenv("FARM_RELEASE_KEY_ALIAS")
             val keyPassword = System.getenv("FARM_RELEASE_KEY_PASSWORD")
-            if (listOf(storeFile, storePassword, keyAlias, keyPassword).any { it.isNullOrBlank() }) {
-                throw GradleException("Refusing release APK/AAB without explicit signing properties")
-            }
-            val requiredStoreFile = requireNotNull(storeFile)
-            val requiredStorePassword = requireNotNull(storePassword)
-            val requiredKeyAlias = requireNotNull(keyAlias)
-            val requiredKeyPassword = requireNotNull(keyPassword)
-            signingConfig = signingConfigs.create("release") {
-                this.storeFile = file(requiredStoreFile)
-                this.storePassword = requiredStorePassword
-                this.keyAlias = requiredKeyAlias
-                this.keyPassword = requiredKeyPassword
+            val signingValues = listOf(storeFile, storePassword, keyAlias, keyPassword)
+            if (signingValues.any { it.isNullOrBlank() }) {
+                if (gradle.startParameter.taskNames.any { it.lowercase().contains("release") }) {
+                    throw GradleException("Refusing release APK/AAB without explicit signing properties")
+                }
+            } else {
+                signingConfig = signingConfigs.create("release") {
+                    this.storeFile = file(requireNotNull(storeFile))
+                    this.storePassword = requireNotNull(storePassword)
+                    this.keyAlias = requireNotNull(keyAlias)
+                    this.keyPassword = requireNotNull(keyPassword)
+                }
             }
         }
     }
