@@ -324,6 +324,7 @@ class AdminTestNotificationOut(APIModel):
     attempted: int
     sent: int
     failed: int
+    invalidated: int = 0
     results: list[dict[str, str]]
 
 
