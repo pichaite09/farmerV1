@@ -106,6 +106,11 @@ class ApiSession extends ChangeNotifier {
   Future<void> _registerCurrentFcm() async {
     if (kIsWeb || !isAuthenticated || Firebase.apps.isEmpty) return;
     try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString('fcm_registration_version') != '2') {
+        await FirebaseMessaging.instance.deleteToken();
+        await prefs.setString('fcm_registration_version', '2');
+      }
       final value = await FirebaseMessaging.instance.getToken();
       if (value != null) await api.registerFcmToken(value);
     } catch (_) {}
