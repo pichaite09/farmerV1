@@ -141,6 +141,7 @@ void main() {
       expect(find.text('ตรวจแปลง 1'), findsOneWidget);
       expect(find.text('กรองประเภทในไทม์ไลน์'), findsOneWidget);
       expect(find.text('ปลูกข้าวฤดูฝน'), findsOneWidget);
+      expect(find.byType(Image), findsOneWidget);
       await tester.tap(find.byType(DropdownButtonFormField<String?>));
       await tester.pumpAndSettle();
       await tester.tap(find.text('งาน').last);
@@ -190,12 +191,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('แปลงนาข้าวตัวอย่าง').last);
     await tester.pumpAndSettle();
-    final dialogWidth = tester.widget<SizedBox>(
-      find.ancestor(
-        of: find.byType(AdminProductionCycleDetailPage),
-        matching: find.byType(SizedBox),
-      ).first,
-    ).width;
+    final dialogWidth = tester
+        .widget<SizedBox>(
+          find
+              .ancestor(
+                of: find.byType(AdminProductionCycleDetailPage),
+                matching: find.byType(SizedBox),
+              )
+              .first,
+        )
+        .width;
     expect(dialogWidth, lessThanOrEqualTo(390));
     expect(find.text('ปลูกข้าวฤดูฝน'), findsOneWidget);
     expect(tester.takeException(), isNull);

@@ -1209,7 +1209,25 @@ class _AdminProductionCycleDetailPageState
                   (item) => Card(
                     margin: const EdgeInsets.only(bottom: 8),
                     child: ListTile(
-                      leading: Icon(Icons.circle, size: 12, color: _emerald),
+                      leading: item.attachments.isEmpty
+                          ? const Icon(Icons.circle, size: 12, color: _emerald)
+                          : InkWell(
+                              onTap: () => showDialog(
+                                context: context,
+                                builder: (_) => _AdminImageDialog(
+                                  api: widget.api,
+                                  attachment: _attachmentMap(
+                                    item.attachments.first,
+                                  ),
+                                ),
+                              ),
+                              child: _RecordImagePreview(
+                                api: widget.api,
+                                attachment: _attachmentMap(
+                                  item.attachments.first,
+                                ),
+                              ),
+                            ),
                       title: Text(item.title),
                       subtitle: Text(
                         '${_recordTypes[item.type] ?? 'ข้อมูล'} • ${_thaiDate(item.date)}',
@@ -1274,6 +1292,12 @@ List<Map<String, dynamic>> _imageAttachments(Map<String, dynamic> record) {
       })
       .toList();
 }
+
+Map<String, dynamic> _attachmentMap(Attachment attachment) => {
+  'id': attachment.id,
+  'contentType': attachment.contentType,
+  'sizeBytes': attachment.sizeBytes,
+};
 
 class _RecordImagePreview extends StatefulWidget {
   final FarmerApi api;
