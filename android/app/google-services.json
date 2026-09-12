@@ -1,26 +1,65 @@
 {
   "project_info": {
-    "project_number": "986858330835",
-    "project_id": "rice-farm-1bcab",
-    "storage_bucket": "rice-farm-1bcab.firebasestorage.app"
+    "project_number": "281845967986",
+    "project_id": "temtech-b8cd9",
+    "storage_bucket": "temtech-b8cd9.appspot.com"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:986858330835:android:9e3ca1cb3100b15226d226",
+        "mobilesdk_app_id": "1:281845967986:android:f67914db605cc7d87a66eb",
         "android_client_info": {
           "package_name": "com.pichai.farmer"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "281845967986-i7ho7cq1rq2mbs1a52cabunls3njrusk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyBhH1MHtsZ9ixhNIs-Xsv44Vhf87i7weNc"
+          "current_key": "AIzaSyDEvDelro3ML3s9FIG_MTZTWzQTZZqDNXw"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "281845967986-i7ho7cq1rq2mbs1a52cabunls3njrusk.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:281845967986:android:f504d2c95cb78c817a66eb",
+        "android_client_info": {
+          "package_name": "tk.temtech.ungcartoon"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "281845967986-i7ho7cq1rq2mbs1a52cabunls3njrusk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEvDelro3ML3s9FIG_MTZTWzQTZZqDNXw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "281845967986-i7ho7cq1rq2mbs1a52cabunls3njrusk.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
