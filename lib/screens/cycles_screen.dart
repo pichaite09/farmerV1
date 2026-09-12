@@ -63,33 +63,6 @@ class _CyclesScreenState extends State<CyclesScreen> {
     }
   }
 
-  Future<void> _delete(ProductionCycle c) async {
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (x) => AlertDialog(
-        title: const Text('ยืนยันการลบ'),
-        content: Text('ต้องการลบ "${c.name}" หรือไม่?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(x, false),
-            child: const Text('ยกเลิก'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(x, true),
-            child: const Text('ลบ'),
-          ),
-        ],
-      ),
-    );
-    if (yes != true || !mounted) return;
-    try {
-      await context.read<ApiSession>().api.deleteCycle(c.id);
-      _reload();
-    } catch (e) {
-      _msg(e.toString());
-    }
-  }
-
   void _msg(String s) {
     if (mounted)
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
@@ -119,100 +92,9 @@ class _CyclesScreenState extends State<CyclesScreen> {
           ),
         );
       return Scaffold(
-        body: DefaultTabController(
-          length: 2,
-          child: Column(
-            children: [
-              const TabBar(
-                tabs: [
-                  Tab(text: 'รอบการผลิต'),
-                  Tab(text: 'สรุป'),
-                ],
-              ),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    ListView.builder(
-                      padding: const EdgeInsets.all(10),
-                      itemCount: xs.length,
-                      itemBuilder: (_, i) {
-                        final x = xs[i];
-                        final status = x.status == 'completed'
-                            ? 'เก็บเกี่ยวเรียบร้อย'
-                            : 'ดำเนินการอยู่';
-                        return Card(
-                          child: ListTile(
-                            isThreeLine: true,
-                            leading: Icon(
-                              x.status == 'completed'
-                                  ? Icons.check_circle
-                                  : Icons.sync,
-                              color: x.status == 'completed'
-                                  ? Colors.grey
-                                  : Colors.green,
-                            ),
-                            title: Text(
-                              '${x.plotName} ${x.name}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${x.cropType}${x.variety.isEmpty ? '' : ' • สายพันธุ์ ${x.variety}'}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    '${x.plantingMethod} • เริ่ม ${ThaiDate.format(x.startDate)}',
-                                    maxLines: 1,
-                                    softWrap: false,
-                                  ),
-                                ),
-                                Text(status),
-                              ],
-                            ),
-                            onTap: () => showDialog<void>(
-                              context: context,
-                              builder: (_) => CycleActivitiesDialog(cycle: x),
-                            ),
-                            trailing: PopupMenuButton<String>(
-                              onSelected: (v) {
-                                if (v == 'edit')
-                                  _form(x);
-                                else
-                                  _delete(x);
-                              },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text('แก้ไข'),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text('ลบ'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    ProductionCycleSummaryView(
-                      future: summaryFuture,
-                      onRetry: _reload,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        body: ProductionCycleSummaryView(
+          future: summaryFuture,
+          onRetry: _reload,
         ),
         floatingActionButton: FloatingActionButton(
           onPressed: () => _form(),
