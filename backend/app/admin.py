@@ -545,7 +545,7 @@ def send_admin_test_notification(
         except Exception as exc:
             # Provider errors are intentionally reduced to a safe result.  In
             # particular, never return the provider exception or device token.
-            if type(exc).__name__ == 'SenderIdMismatchError':
+            if type(exc).__name__ in {'SenderIdMismatchError', 'UnregisteredError'}:
                 device.active = False
                 invalidated += 1
             results.append({'deviceId': str(device.id), 'status': 'failed'})

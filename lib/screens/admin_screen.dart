@@ -813,9 +813,13 @@ class _TestNotificationDialogState extends State<_TestNotificationDialog> {
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       final message = e is ApiException && e.statusCode == 422
-          ? 'ผู้ใช้งานนี้ยังไม่มีอุปกรณ์ที่พร้อมรับข้อความ'
+          ? 'ผู้ใช้งานนี้ยังไม่มีอุปกรณ์ที่พร้อมรับข้อความ กรุณาเปิด APK ล่าสุดและ Login ใหม่'
           : e is ApiException && e.statusCode == 409
           ? 'ผู้ใช้งานนี้ไม่ได้อยู่ในสถานะใช้งาน'
+          : e is ApiException &&
+                e.statusCode == 502 &&
+                e.message.contains('อุปกรณ์ลงทะเบียน')
+          ? 'อุปกรณ์หมดอายุหรือใช้ Firebase คนละโปรเจกต์ กรุณาถอน APK เดิม ติดตั้ง APK ล่าสุด และ Login ใหม่'
           : 'ส่งข้อความทดสอบไม่สำเร็จ';
       if (mounted) setState(() => error = message);
     } finally {
