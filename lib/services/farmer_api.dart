@@ -354,6 +354,20 @@ class FarmerApi {
     return response.bodyBytes;
   }
 
+  Future<Uint8List> adminAttachmentBytes(String attachmentId) async {
+    final response = await client.get(
+      Uri.parse('$baseUrl/api/v1/admin/attachments/$attachmentId/content'),
+      headers: {if (token != null) 'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(response.statusCode, 'โหลดรูปภาพไม่สำเร็จ');
+    }
+    if (response.bodyBytes.length > 10 * 1024 * 1024) {
+      throw const FormatException('รูปภาพมีขนาดใหญ่เกินไป');
+    }
+    return response.bodyBytes;
+  }
+
   Future<void> deleteAttachment(String attachmentId) =>
       delete('/attachments/$attachmentId');
 

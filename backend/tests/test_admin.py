@@ -214,6 +214,87 @@ def test_admin_records_rejects_unsupported_context_filter_combination(client):
     assert response.status_code == 422
 
 
+def test_all_records_global_pagination_filters_and_details(client):
+    from datetime import datetime, timezone
+    from app.database import SessionLocal
+    from app.admin import MODELS
+    a, b, admin = _register(client), _register(client), _register(client)
+    _seed_records(a['user']['id'])
+    records_b = _seed_records(b['user']['id'])
+    # Interleave types/owners, including equal timestamps: never concatenate pages.
+    expected = []
+    with SessionLocal() as db:
+        for i, (kind, model) in enumerate(MODELS.items()):
+            for row in db.query(model).all():
+                row.created_at = datetime(2026, 2, 1 + i % 3, tzinfo=timezone.utc)
+                expected.append((row.created_at.isoformat(), kind, str(row.id)))
+        db.commit()
+    headers = _admin_headers(client, admin)
+    expected.sort(reverse=True)
+    collected = []
+    for offset in range(0, 14, 3):
+        response = client.get(f'/api/v1/admin/records?type=all&limit=3&offset={offset}', headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.json()['total'] == 14
+        collected.extend((r['type'], r['id']) for r in response.json()['items'])
+    assert collected == [(kind, id) for _, kind, id in expected]
+    assert client.get('/api/v1/admin/records', headers=headers).json()['total'] == 14
+    owned = client.get('/api/v1/admin/records?type=all&owner=' + b['user']['id'], headers=headers).json()
+    assert owned['total'] == 7
+    assert {r['recorder']['id'] for r in owned['items']} == {b['user']['id']}
+    for r in owned['items']:
+        detail = client.get(f"/api/v1/admin/records/{r['type']}/{r['id']}", headers=headers)
+        assert detail.status_code == 200
+        assert detail.json() == r
+        assert not any(secret in str(r) for secret in ['password', 'token', 'p256dh'])
+    filtered = client.get('/api/v1/admin/records', params={'type': 'all', 'owner': b['user']['id'], 'plot': records_b['plot'], 'cycle': records_b['cycle']}, headers=headers)
+    assert filtered.json()['total'] == 6  # plots have no cycle: excluded in all mode
+    dated = client.get('/api/v1/admin/records?type=all&from=2026-01-07&to=2026-01-07', headers=headers)
+    assert {r['type'] for r in dated.json()['items']} == {'task'}
+    assert client.get('/api/v1/admin/records?type=all&offset=99', headers=headers).json()['items'] == []
+    assert client.get('/api/v1/admin/records?type=all', headers={'Authorization': 'Bearer ' + a['access_token']}).status_code == 403
+    assert client.get('/api/v1/admin/records?type=all').status_code == 401
+    assert client.get('/api/v1/admin/records/all/' + records_b['plot'], headers=headers).status_code == 422
+
+
+
+
+def test_admin_attachment_content_is_admin_only_and_owner_safe(client, tmp_path, monkeypatch):
+    from app.database import SessionLocal
+    from app.models import Attachment, Plot
+    from app.database import settings
+
+    monkeypatch.setattr(settings, 'attachment_storage_path', str(tmp_path))
+    farmer = _register(client)
+    other_farmer = _register(client)
+    admin = _register(client)
+    with SessionLocal() as db:
+        plot = Plot(owner_id=farmer['user']['id'], name='Image plot', area=1)
+        db.add(plot)
+        db.flush()
+        attachment = Attachment(
+            owner_id=farmer['user']['id'], parent_type='plot', parent_id=plot.id,
+            storage_name='safe.png', content_type='image/png', size_bytes=4,
+        )
+        db.add(attachment)
+        db.commit()
+        attachment_id = str(attachment.id)
+    (tmp_path / 'safe.png').write_bytes(b'PNG!')
+    farmer_headers = {'Authorization': 'Bearer ' + farmer['access_token']}
+    other_headers = {'Authorization': 'Bearer ' + other_farmer['access_token']}
+    admin_headers = _admin_headers(client, admin)
+    path = f'/api/v1/admin/attachments/{attachment_id}/content'
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers=farmer_headers).status_code == 403
+    assert client.get(path, headers=other_headers).status_code == 403
+    response = client.get(path, headers=admin_headers)
+    assert response.status_code == 200
+    assert response.headers['content-type'] == 'image/png'
+    assert response.content == b'PNG!'
+    assert client.get(f'/api/v1/attachments/{attachment_id}/content', headers=other_headers).status_code == 404
+    assert client.get(f'/api/v1/attachments/{attachment_id}/content', headers=farmer_headers).status_code == 200
+
+
 def test_admin_plot_created_on_to_date_is_included(client):
     from datetime import datetime, timezone
     from app.database import SessionLocal

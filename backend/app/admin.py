@@ -1,12 +1,14 @@
 from datetime import date, datetime, time, timezone
+from pathlib import Path
 from typing import Literal
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select, update
+from fastapi.responses import FileResponse
+from sqlalchemy import func, select, update, literal, union_all
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, settings
 from app.main import admin_session
 from app.models import (
     Activity, Attachment, FieldInspection, FuelRecord, Plot, ProductionCycle,
@@ -121,6 +123,40 @@ def _attachments(db: Session, record_type: str, ids):
     return {r.parent_id: [{'id': r.id, 'contentType': r.content_type, 'sizeBytes': r.size_bytes, 'createdAt': r.created_at} for r in rows] for r in rows}
 
 
+_ADMIN_IMAGE_TYPES = frozenset({'image/jpeg', 'image/png', 'image/webp'})
+_ADMIN_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+
+
+@router.get('/attachments/{attachment_id}/content')
+def admin_attachment_content(
+    attachment_id: uuid.UUID,
+    identity=Depends(admin_session),
+    db: Session = Depends(get_db),
+):
+    """Serve an image only after the admin RBAC check and path validation."""
+    row = db.scalar(select(Attachment).where(Attachment.id == attachment_id))
+    if row is None:
+        raise HTTPException(404, 'Attachment not found')
+    if row.content_type not in _ADMIN_IMAGE_TYPES:
+        raise HTTPException(415, 'Attachment is not an allowed image')
+
+    root = Path(settings.attachment_storage_path).resolve()
+    candidate = (root / row.storage_name).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        raise HTTPException(404, 'Attachment content not found')
+    if not candidate.is_file():
+        raise HTTPException(404, 'Attachment content not found')
+    try:
+        size = candidate.stat().st_size
+    except OSError:
+        raise HTTPException(404, 'Attachment content not found')
+    if size > _ADMIN_IMAGE_MAX_BYTES or row.size_bytes > _ADMIN_IMAGE_MAX_BYTES:
+        raise HTTPException(413, 'Attachment content is too large')
+    return FileResponse(candidate, media_type=row.content_type, headers={'Cache-Control': 'no-store'})
+
+
 def _row(record_type, row, user, plot, cycle, attachments):
     plot, cycle = _safe_context(plot, cycle)
     if record_type == 'plot' and plot is None:
@@ -180,7 +216,7 @@ def _query_records(db, record_type, frm, to, owner, plot_id, cycle_id):
 
 @router.get('/records')
 def list_admin_records(
-    record_type: RecordType = Query(..., alias='type'),
+    record_type: RecordType | Literal['all'] = Query('all', alias='type'),
     frm: date | None = Query(None, alias='from'), to: date | None = Query(None),
     owner: uuid.UUID | None = Query(None), plot: uuid.UUID | None = Query(None), cycle: uuid.UUID | None = Query(None),
     limit: int = Query(50), offset: int = Query(0),
@@ -188,6 +224,39 @@ def list_admin_records(
 ):
     _pagination(limit, offset)
     if frm and to and frm > to: raise HTTPException(422, 'from must not exceed to')
+    if record_type == 'all':
+        # Page a single SQL union before hydrating safe fields. A cycle filter
+        # excludes plots (which have no cycle), rather than silently ignoring it.
+        branches = []
+        for kind, model in MODELS.items():
+            if cycle and kind == 'plot':
+                continue
+            query = _query_records(db, kind, frm, to, owner, plot, cycle)
+            branches.append(query.with_only_columns(
+                model.id.label('id'), model.created_at.label('created_at'),
+                literal(kind).label('type'), maintain_column_froms=True,
+            ))
+        combined = union_all(*branches).subquery()
+        total = int(db.scalar(select(func.count()).select_from(combined)) or 0)
+        keys = db.execute(select(combined).order_by(
+            combined.c.created_at.desc(), combined.c.type.desc(), combined.c.id.desc(),
+        ).limit(limit).offset(offset)).all()
+        hydrated, attachments = {}, {}
+        for kind, model in MODELS.items():
+            ids = [key.id for key in keys if key.type == kind]
+            if not ids:
+                continue
+            hydrated.update({(kind, r.id): r for r in db.scalars(select(model).where(model.id.in_(ids))).all()})
+            attachments[kind] = _attachments(db, kind, ids)
+        rows = list(hydrated.values())
+        users, plots, cycles, transactions = _context(db, rows)
+        items = []
+        for key in keys:
+            row = hydrated[(key.type, key.id)]
+            items.append(_row(key.type, row, users.get(row.owner_id),
+                _record_plot(plots, cycles, transactions, row),
+                _record_cycle(cycles, transactions, row), attachments[key.type].get(key.id, [])))
+        return {'type': 'all', 'limit': limit, 'offset': offset, 'total': total, 'items': items}
     query = _query_records(db, record_type, frm, to, owner, plot, cycle)
     model = MODELS[record_type]
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0

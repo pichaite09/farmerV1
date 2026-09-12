@@ -75,10 +75,10 @@ void main() {
     await tester.pump();
     expect(find.text('ภาพรวม'), findsOneWidget);
     expect(find.text('ผู้ใช้งาน'), findsOneWidget);
-    expect(find.text('ข้อมูลเกษตร'), findsNWidgets(2));
+    expect(find.text('ข้อมูลเกษตร'), findsOneWidget);
     expect(find.text('ประกาศ'), findsOneWidget);
     expect(find.text('บันทึกกิจกรรม'), findsOneWidget);
-    expect(find.byType(AdminRecordsPage), findsOneWidget);
+    expect(find.byType(AdminDashboardPage), findsOneWidget);
   });
   testWidgets('announcement actions stack on narrow screens', (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));

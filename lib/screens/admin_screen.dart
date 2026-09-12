@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/admin_models.dart';
@@ -10,6 +12,54 @@ const _panel = Color(0xff151b18);
 const _panelRaised = Color(0xff1b2420);
 const _emerald = Color(0xff35d39a);
 const _muted = Color(0xff9aa9a2);
+const _recordTypes = {
+  'activity': 'กิจกรรม',
+  'field_inspection': 'ตรวจแปลง',
+  'task': 'งาน',
+  'production_cycle': 'รอบผลิต',
+  'plot': 'แปลง',
+  'transaction': 'การเงิน',
+  'fuel_record': 'เชื้อเพลิง',
+};
+
+String _personName(Object? value) {
+  if (value is! Map) return 'ไม่ระบุ';
+  final name = [value['firstName'], value['lastName']]
+      .whereType<String>()
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .join(' ');
+  if (name.isNotEmpty) return name;
+  for (final key in ['name', 'fullName', 'email']) {
+    final v = value[key];
+    if (v is String && v.trim().isNotEmpty) return v;
+  }
+  return 'ไม่ระบุ';
+}
+
+String _thaiDate(String value) {
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) return 'ไม่ระบุวันที่';
+  // Date-only values stay calendar dates; timestamps are displayed in Bangkok.
+  final date = value.contains('T')
+      ? parsed.toUtc().add(const Duration(hours: 7))
+      : parsed;
+  const months = [
+    'ม.ค.',
+    'ก.พ.',
+    'มี.ค.',
+    'เม.ย.',
+    'พ.ค.',
+    'มิ.ย.',
+    'ก.ค.',
+    'ส.ค.',
+    'ก.ย.',
+    'ต.ค.',
+    'พ.ย.',
+    'ธ.ค.',
+  ];
+  return '${date.day} ${months[date.month - 1]} ${date.year + 543}';
+}
 
 class AdminScreen extends StatefulWidget {
   final FarmerApi? api;
@@ -22,15 +72,15 @@ class AdminScreen extends StatefulWidget {
 class _AdminScreenState extends State<AdminScreen> {
   int index = 0;
   static const names = [
-    'ข้อมูลเกษตร',
     'ภาพรวม',
+    'ข้อมูลเกษตร',
     'ผู้ใช้งาน',
     'ประกาศ',
     'บันทึกกิจกรรม',
   ];
   static const icons = [
-    Icons.folder,
     Icons.dashboard,
+    Icons.folder,
     Icons.people,
     Icons.campaign,
     Icons.history,
@@ -44,17 +94,19 @@ class _AdminScreenState extends State<AdminScreen> {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final pages = [
-      AdminRecordsPage(api: api),
       AdminDashboardPage(
         api: api,
         onNavigate: (i) => setState(() => index = i),
       ),
+      AdminRecordsPage(api: api),
       AdminUsersPage(api: api, currentUserId: currentUserId),
       AdminAnnouncementsPage(api: api),
       AdminAuditPage(api: api),
     ];
     return Theme(
-      data: Theme.of(context).copyWith(
+      data: ThemeData(
+        useMaterial3: true,
+        fontFamily: Theme.of(context).textTheme.bodyMedium?.fontFamily,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: _ink,
         canvasColor: _panel,
@@ -101,6 +153,7 @@ class _AdminScreenState extends State<AdminScreen> {
         ),
         body: wide
             ? Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _Sidebar(
                     index: index,
@@ -134,66 +187,74 @@ class _Sidebar extends StatelessWidget {
   final ValueChanged<int> onSelect;
   const _Sidebar({required this.index, required this.onSelect});
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => SizedBox(
     width: 224,
-    color: _panel,
-    padding: const EdgeInsets.fromLTRB(14, 20, 14, 14),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(12, 0, 12, 24),
-          child: Row(
-            children: [
-              Icon(Icons.shield_outlined, color: _emerald),
-              SizedBox(width: 10),
-              Text(
-                'OPS CONSOLE',
-                style: TextStyle(
-                  letterSpacing: 1.4,
-                  fontWeight: FontWeight.bold,
-                ),
+    child: Material(
+      color: _panel,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 20, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 0, 12, 24),
+              child: Row(
+                children: [
+                  Icon(Icons.shield_outlined, color: _emerald),
+                  SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      'OPS CONSOLE',
+                      style: TextStyle(
+                        letterSpacing: 1.4,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-        for (var i = 0; i < _AdminScreenState.names.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: ListTile(
-              selected: index == i,
-              selectedTileColor: _panelRaised,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              leading: SizedBox(
-                width: 24,
-                height: 24,
-                child: Icon(
-                  _AdminScreenState.icons[i],
-                  size: 21,
-                  color: index == i ? _emerald : _muted,
-                ),
-              ),
-              title: Text(
-                _AdminScreenState.names[i],
-                style: TextStyle(
-                  color: index == i ? _emerald : Colors.white70,
-                  fontWeight: index == i ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-              onTap: () => onSelect(i),
             ),
-          ),
-        const Spacer(),
-        const Padding(
-          padding: EdgeInsets.all(12),
-          child: Text(
-            'ระบบผู้ดูแล • อ่านข้อมูลและจัดการการสื่อสาร',
-            style: TextStyle(color: _muted, fontSize: 11),
-          ),
+            for (var i = 0; i < _AdminScreenState.names.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: ListTile(
+                  selected: index == i,
+                  selectedTileColor: _panelRaised,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  leading: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Icon(
+                      _AdminScreenState.icons[i],
+                      size: 21,
+                      color: index == i ? _emerald : _muted,
+                    ),
+                  ),
+                  title: Text(
+                    _AdminScreenState.names[i],
+                    style: TextStyle(
+                      color: index == i ? _emerald : Colors.white70,
+                      fontWeight: index == i
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                    ),
+                  ),
+                  onTap: () => onSelect(i),
+                ),
+              ),
+            const Spacer(),
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                'ระบบผู้ดูแล • อ่านข้อมูลและจัดการการสื่อสาร',
+                style: TextStyle(color: _muted, fontSize: 11),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     ),
   );
 }
@@ -258,9 +319,19 @@ class _StatusStrip extends StatelessWidget {
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 10),
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const Spacer(),
-        Text(detail, style: const TextStyle(color: _muted, fontSize: 12)),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            detail,
+            style: const TextStyle(color: _muted, fontSize: 12),
+          ),
+        ),
       ],
     ),
   );
@@ -345,7 +416,7 @@ class AdminDashboardPage extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _StatusStrip('ระบบทำงานปกติ', _emerald, 'API พร้อมใช้งาน'),
+        const _StatusStrip('ข้อมูลจากระบบ', _muted, 'ไม่ใช่การวัดสุขภาพ API'),
         const SizedBox(height: 18),
         _Async(
           future: api.adminDashboard(),
@@ -359,14 +430,24 @@ class AdminDashboardPage extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: entries.isEmpty
-                      ? [const _Empty('ยังไม่มีตัวชี้วัด')]
-                      : entries
-                            .map((e) => _Kpi(label: e.key, value: '${e.value}'))
-                            .toList(),
+                LayoutBuilder(
+                  builder: (context, constraints) => Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: entries.isEmpty
+                        ? [const _Empty('ยังไม่มีตัวชี้วัด')]
+                        : entries
+                              .map(
+                                (e) => _Kpi(
+                                  label: e.key,
+                                  value: '${e.value}',
+                                  width: constraints.maxWidth < 400
+                                      ? (constraints.maxWidth - 12) / 2
+                                      : 190,
+                                ),
+                              )
+                              .toList(),
+                  ),
                 ),
                 const SizedBox(height: 22),
                 const Text(
@@ -404,10 +485,11 @@ class AdminDashboardPage extends StatelessWidget {
 
 class _Kpi extends StatelessWidget {
   final String label, value;
-  const _Kpi({required this.label, required this.value});
+  final double width;
+  const _Kpi({required this.label, required this.value, this.width = 190});
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 190,
+    width: width,
     child: Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -421,7 +503,18 @@ class _Kpi extends StatelessWidget {
               style: const TextStyle(fontSize: 27, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 3),
-            Text(label, style: const TextStyle(color: _muted)),
+            Text(
+              const {
+                    'users': 'บัญชีผู้ใช้',
+                    'plots': 'แปลงเกษตร',
+                    'cycles': 'รอบการผลิต',
+                    'activities': 'กิจกรรมเกษตร',
+                    'tasks': 'งานเกษตร',
+                    'notifications': 'การแจ้งเตือน',
+                  }[label] ??
+                  label,
+              style: const TextStyle(color: _muted),
+            ),
           ],
         ),
       ),
@@ -529,9 +622,9 @@ class _UsersState extends State<AdminUsersPage> {
                 return c.maxWidth < 650
                     ? Column(
                         children: [
-                          fields[0],
+                          (fields[0] as Expanded).child,
                           const SizedBox(height: 10),
-                          Row(children: fields.sublist(2)),
+                          Wrap(spacing: 10, children: [fields[2], fields[4]]),
                         ],
                       )
                     : Row(children: fields);
@@ -575,7 +668,13 @@ class _UsersState extends State<AdminUsersPage> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: _Dot(color: suspended ? Colors.redAccent : _emerald),
-        title: Text(u.email),
+        title: Text(
+          _personName({
+            'firstName': u.firstName,
+            'lastName': u.lastName,
+            'email': u.email,
+          }),
+        ),
         subtitle: Text(
           '${u.role == 'admin' ? 'ผู้ดูแลระบบ' : 'เกษตรกร'}  •  ${suspended ? 'ระงับ' : 'ใช้งาน'}',
           style: const TextStyle(color: _muted),
@@ -673,7 +772,7 @@ class AdminRecordsPage extends StatefulWidget {
 }
 
 class _RecordsState extends State<AdminRecordsPage> {
-  String type = 'activity';
+  String type = 'all';
   String? farmerId;
   int offset = 0;
   late Future<AdminPage<Map<String, dynamic>>> future;
@@ -732,8 +831,83 @@ class _RecordsState extends State<AdminRecordsPage> {
           builder: (p) => p.items.isEmpty
               ? const _Empty('ไม่พบข้อมูล')
               : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    ...p.items.map(_record),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth < 800)
+                          return Column(
+                            children: p.items.map(_record).toList(),
+                          );
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            showCheckboxColumn: false,
+                            columns: const [
+                              DataColumn(label: Text('ประเภท')),
+                              DataColumn(label: Text('รายการ')),
+                              DataColumn(label: Text('ผู้บันทึก')),
+                              DataColumn(label: Text('แปลง')),
+                              DataColumn(label: Text('สร้างเมื่อ')),
+                              DataColumn(label: Text('รูปภาพ')),
+                            ],
+                            rows: p.items
+                                .map(
+                                  (r) => DataRow(
+                                    onSelectChanged: (_) => _showRecord(r),
+                                    cells: [
+                                      DataCell(
+                                        Text(
+                                          _recordTypes[r['type']] ?? 'ไม่ระบุ',
+                                        ),
+                                      ),
+                                      DataCell(
+                                        SizedBox(
+                                          width: 240,
+                                          child: Text(
+                                            _safeValue(r, [
+                                              'name',
+                                              'description',
+                                              'item',
+                                              'fuelType',
+                                              'overallStatus',
+                                            ]),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(_personName(r['recorder'])),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          _formatRecordDetailValue(
+                                            'plot',
+                                            r['plot'],
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(_thaiDate('${r['createdAt']}')),
+                                      ),
+                                      DataCell(
+                                        _RecordImagePreview(
+                                          api: widget.api,
+                                          attachment:
+                                              _imageAttachments(r).isEmpty
+                                              ? null
+                                              : _imageAttachments(r).first,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        );
+                      },
+                    ),
                     _Pager(
                       p,
                       onPrevious: offset == 0
@@ -760,6 +934,7 @@ class _RecordsState extends State<AdminRecordsPage> {
     value: type,
     decoration: const InputDecoration(labelText: 'ประเภทข้อมูล'),
     items: const [
+      DropdownMenuItem(value: 'all', child: Text('ทั้งหมด')),
       DropdownMenuItem(value: 'activity', child: Text('กิจกรรม')),
       DropdownMenuItem(value: 'field_inspection', child: Text('ตรวจแปลง')),
       DropdownMenuItem(value: 'task', child: Text('งาน')),
@@ -838,31 +1013,50 @@ class _RecordsState extends State<AdminRecordsPage> {
   );
 
   Widget _record(Map<String, dynamic> r) {
-    final title = _safeValue(r, ['name', 'title', 'description', 'id']);
-    final date = _safeValue(r, ['createdAt', 'created_at', 'date']);
+    final title = _safeValue(r, [
+      'name',
+      'title',
+      'description',
+      'item',
+      'fuelType',
+    ]);
+    final date = _thaiDate(_safeValue(r, ['createdAt', 'created_at', 'date']));
+    final kind = _recordTypes[r['type']] ?? 'ข้อมูลเกษตร';
+    final recorder = _personName(r['recorder']);
+    final images = _imageAttachments(r);
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: const Icon(Icons.article_outlined, color: _emerald),
-        title: Text(title),
-        subtitle: Text(date, style: const TextStyle(color: _muted)),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('รายละเอียดข้อมูล'),
-            content: _RecordDetails(record: r),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('ปิด'),
-              ),
-            ],
-          ),
+        leading: _RecordImagePreview(
+          api: widget.api,
+          attachment: images.isEmpty ? null : images.first,
         ),
+        title: Text(title == 'ไม่ระบุ' ? kind : title),
+        subtitle: Text(
+          '$kind • $recorder\n$date',
+          style: const TextStyle(color: _muted),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _showRecord(r),
       ),
     );
   }
+
+  void _showRecord(Map<String, dynamic> r) => showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('รายละเอียดข้อมูล'),
+      content: SingleChildScrollView(
+        child: _RecordDetails(api: widget.api, record: r),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('ปิด'),
+        ),
+      ],
+    ),
+  );
 }
 
 String _safeValue(Map<String, dynamic> r, List<String> keys) {
@@ -875,9 +1069,152 @@ String _safeValue(Map<String, dynamic> r, List<String> keys) {
   return 'ไม่ระบุ';
 }
 
+List<Map<String, dynamic>> _imageAttachments(Map<String, dynamic> record) {
+  final raw = record['attachments'];
+  if (raw is! Iterable) return const [];
+  return raw
+      .whereType<Map>()
+      .map((value) => Map<String, dynamic>.from(value))
+      .where((value) {
+        final type = value['contentType'];
+        final size = value['sizeBytes'];
+        return value['id'] != null &&
+            const {'image/jpeg', 'image/png', 'image/webp'}.contains(type) &&
+            size is num &&
+            size >= 0 &&
+            size <= 10 * 1024 * 1024;
+      })
+      .toList();
+}
+
+class _RecordImagePreview extends StatefulWidget {
+  final FarmerApi api;
+  final Map<String, dynamic>? attachment;
+  const _RecordImagePreview({required this.api, required this.attachment});
+  @override
+  State<_RecordImagePreview> createState() => _RecordImagePreviewState();
+}
+
+class _RecordImagePreviewState extends State<_RecordImagePreview> {
+  late final Future<Uint8List> future;
+  @override
+  void initState() {
+    super.initState();
+    future = widget.attachment == null
+        ? Future.value(Uint8List(0))
+        : widget.api.adminAttachmentBytes('${widget.attachment!['id']}');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.attachment == null) {
+      return const Icon(Icons.article_outlined, color: _emerald);
+    }
+    return FutureBuilder<Uint8List>(
+      future: future,
+      builder: (context, snapshot) => SizedBox(
+        width: 48,
+        height: 48,
+        child: snapshot.hasData
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.memory(
+                  snapshot.data!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      const Icon(Icons.broken_image_outlined),
+                ),
+              )
+            : snapshot.hasError
+            ? const Icon(Icons.broken_image_outlined, color: _muted)
+            : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+    );
+  }
+}
+
+class _AdminImageGallery extends StatelessWidget {
+  final FarmerApi api;
+  final List<Map<String, dynamic>> attachments;
+  const _AdminImageGallery({required this.api, required this.attachments});
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'รูปภาพ ${attachments.length} รายการ',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: attachments
+              .map(
+                (attachment) => InkWell(
+                  onTap: () => showDialog(
+                    context: context,
+                    builder: (_) =>
+                        _AdminImageDialog(api: api, attachment: attachment),
+                  ),
+                  child: _RecordImagePreview(api: api, attachment: attachment),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    ),
+  );
+}
+
+class _AdminImageDialog extends StatelessWidget {
+  final FarmerApi api;
+  final Map<String, dynamic> attachment;
+  const _AdminImageDialog({required this.api, required this.attachment});
+  @override
+  Widget build(BuildContext context) => Dialog(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: FutureBuilder<Uint8List>(
+        future: api.adminAttachmentBytes('${attachment['id']}'),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const SizedBox(
+              width: 280,
+              height: 180,
+              child: Center(child: Text('เปิดรูปภาพไม่สำเร็จ')),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const SizedBox(
+              width: 280,
+              height: 180,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          return InteractiveViewer(
+            child: Image.memory(
+              snapshot.data!,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const SizedBox(
+                width: 280,
+                height: 180,
+                child: Center(child: Text('รูปภาพไม่ถูกต้อง')),
+              ),
+            ),
+          );
+        },
+      ),
+    ),
+  );
+}
+
 class _RecordDetails extends StatelessWidget {
+  final FarmerApi api;
   final Map<String, dynamic> record;
-  const _RecordDetails({required this.record});
+  const _RecordDetails({required this.api, required this.record});
   @override
   Widget build(BuildContext context) {
     final allowed = [
@@ -898,6 +1235,16 @@ class _RecordDetails extends StatelessWidget {
       'created_at',
       'date',
       'owner',
+      'recorder',
+      'item',
+      'area',
+      'soil',
+      'startDate',
+      'variety',
+      'category',
+      'details',
+      'transactionType',
+      'followUpRequired',
       'plot',
       'cycle',
     ];
@@ -907,6 +1254,11 @@ class _RecordDetails extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_imageAttachments(record).isNotEmpty)
+            _AdminImageGallery(
+              api: api,
+              attachments: _imageAttachments(record),
+            ),
           for (final key in allowed)
             if (record[key] != null)
               Padding(
@@ -926,6 +1278,19 @@ class _RecordDetails extends StatelessWidget {
         'created_at': 'สร้างเมื่อ',
         'description': 'รายละเอียด',
         'status': 'สถานะ',
+        'name': 'ชื่อ',
+        'type': 'ประเภท',
+        'date': 'วันที่',
+        'recorder': 'ผู้บันทึก',
+        'item': 'รายการ',
+        'area': 'พื้นที่',
+        'soil': 'ดิน',
+        'startDate': 'วันเริ่มต้น',
+        'variety': 'พันธุ์',
+        'category': 'หมวดหมู่',
+        'details': 'รายละเอียด',
+        'transactionType': 'ประเภทธุรกรรม',
+        'followUpRequired': 'ต้องติดตาม',
         'owner': 'เจ้าของ',
         'plot': 'แปลง',
         'cycle': 'รอบผลิต',
@@ -942,6 +1307,12 @@ class _RecordDetails extends StatelessWidget {
 }
 
 String _formatRecordDetailValue(String key, Object? value) {
+  if (key == 'recorder' || key == 'owner') return _personName(value);
+  if (key == 'type') return _recordTypes[value] ?? 'ไม่ระบุ';
+  if (key.toLowerCase().contains('date') ||
+      key == 'createdAt' ||
+      key == 'created_at')
+    return _thaiDate(value.toString());
   if (value is! Map) return value.toString();
 
   final nestedKeys = switch (key) {
