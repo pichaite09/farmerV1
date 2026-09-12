@@ -116,11 +116,20 @@ def _safe_context(plot, cycle):
             {'id': cycle.id, 'name': cycle.name, 'cropType': cycle.crop_type, 'status': cycle.status} if cycle else None)
 
 
-def _attachments(db: Session, record_type: str, ids):
+def _attachments(db: Session, record_type: str, ids, owner_id=None):
     if not ids:
         return {}
-    rows = db.scalars(select(Attachment).where(Attachment.parent_type == record_type, Attachment.parent_id.in_(ids))).all()
-    return {r.parent_id: [{'id': r.id, 'contentType': r.content_type, 'sizeBytes': r.size_bytes, 'createdAt': r.created_at} for r in rows] for r in rows}
+    query = select(Attachment).where(Attachment.parent_type == record_type, Attachment.parent_id.in_(ids))
+    if owner_id is not None:
+        query = query.where(Attachment.owner_id == owner_id)
+    rows = db.scalars(query).all()
+    result = {}
+    for row in rows:
+        result.setdefault(row.parent_id, []).append({
+            'id': row.id, 'contentType': row.content_type,
+            'sizeBytes': row.size_bytes, 'createdAt': row.created_at,
+        })
+    return result
 
 
 _ADMIN_IMAGE_TYPES = frozenset({'image/jpeg', 'image/png', 'image/webp'})
@@ -212,6 +221,65 @@ def _query_records(db, record_type, frm, to, owner, plot_id, cycle_id):
         elif hasattr(model, 'cycle_id'):
             query = query.where(model.cycle_id == cycle_id)
     return query
+
+
+def _cycle_detail_rows(db: Session, cycle: ProductionCycle):
+    owner_id = cycle.owner_id
+    plot = db.get(Plot, cycle.plot_id)
+    owner = db.get(User, owner_id)
+    queries = {
+        'activities': select(Activity).where(Activity.owner_id == owner_id, Activity.cycle_id == cycle.id),
+        'fieldInspections': select(FieldInspection).where(
+            FieldInspection.owner_id == owner_id, FieldInspection.cycle_id == cycle.id,
+        ),
+        'tasks': select(Task).where(Task.owner_id == owner_id, Task.cycle_id == cycle.id),
+        'transactions': select(Transaction).where(
+            Transaction.owner_id == owner_id,
+            Transaction.cycle_id == cycle.id,
+            Transaction.fuel_record_id.is_(None),
+        ),
+    }
+    rows = {key: list(db.scalars(query).all()) for key, query in queries.items()}
+    # Fuel records are linked through their transaction's cycle.  Joining here
+    # prevents an unrelated/unassigned fuel row from leaking into the cycle.
+    rows['fuelRecords'] = list(db.scalars(
+        select(FuelRecord).join(Transaction, FuelRecord.transaction_id == Transaction.id).where(
+            FuelRecord.owner_id == owner_id,
+            Transaction.owner_id == owner_id,
+            Transaction.cycle_id == cycle.id,
+        ).order_by(FuelRecord.date, FuelRecord.id)
+    ).all())
+    record_types = {
+        'activities': 'activity', 'fieldInspections': 'field_inspection',
+        'tasks': 'task', 'transactions': 'transaction', 'fuelRecords': 'fuel_record',
+    }
+    serialized = {}
+    for key, values in rows.items():
+        kind = record_types[key]
+        attachments = _attachments(db, kind, [row.id for row in values], owner_id=owner_id)
+        serialized[key] = [_row(kind, row, owner, plot, cycle, attachments.get(row.id, [])) for row in values]
+    timeline = [item for key in ('activities', 'fieldInspections', 'tasks', 'transactions', 'fuelRecords') for item in serialized[key]]
+    timeline.sort(key=lambda item: (str(item.get('date') or item.get('inspectionDate') or item.get('dueDate') or item.get('createdAt') or ''), str(item['id'])), reverse=True)
+    return serialized, timeline
+
+
+@router.get('/production-cycles/{cycle_id}/detail')
+def admin_production_cycle_detail(
+    cycle_id: uuid.UUID,
+    identity=Depends(admin_session),
+    db: Session = Depends(get_db),
+):
+    cycle = db.scalar(select(ProductionCycle).where(ProductionCycle.id == cycle_id))
+    if cycle is None:
+        raise HTTPException(404, 'Production cycle not found')
+    rows, timeline = _cycle_detail_rows(db, cycle)
+    cycle_attachments = _attachments(db, 'production_cycle', [cycle.id], owner_id=cycle.owner_id).get(cycle.id, [])
+    return {
+        'cycle': _row('production_cycle', cycle, db.get(User, cycle.owner_id), db.get(Plot, cycle.plot_id), cycle, cycle_attachments),
+        'counts': {key: len(value) for key, value in rows.items()},
+        **rows,
+        'timeline': timeline,
+    }
 
 
 @router.get('/records')

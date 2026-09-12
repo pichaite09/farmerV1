@@ -121,4 +121,83 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'production cycle detail shows summary timeline and disjoint filters',
+    (tester) async {
+      final api = AdminFixtureApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AdminProductionCycleDetailPage(
+              api: api,
+              cycleId: 'synthetic-production_cycle',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('กิจกรรม 1'), findsOneWidget);
+      expect(find.text('ตรวจแปลง 1'), findsOneWidget);
+      expect(find.text('กรองประเภทในไทม์ไลน์'), findsOneWidget);
+      expect(find.text('ปลูกข้าวฤดูฝน'), findsOneWidget);
+      await tester.tap(find.byType(DropdownButtonFormField<String?>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('งาน').last);
+      await tester.pumpAndSettle();
+      expect(find.text('งาน 1'), findsOneWidget);
+      expect(find.text('ปลูกข้าวฤดูฝน'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('production cycle detail remains usable on narrow layout', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdminProductionCycleDetailPage(
+            api: AdminFixtureApi(),
+            cycleId: 'synthetic-production_cycle',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('แปลงนาข้าวตัวอย่าง'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('production cycle detail dialog is narrow safe', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: AdminRecordsPage(api: AdminFixtureApi())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('รอบผลิต').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('แปลงนาข้าวตัวอย่าง').last);
+    await tester.pumpAndSettle();
+    final dialogWidth = tester.widget<SizedBox>(
+      find.ancestor(
+        of: find.byType(AdminProductionCycleDetailPage),
+        matching: find.byType(SizedBox),
+      ).first,
+    ).width;
+    expect(dialogWidth, lessThanOrEqualTo(390));
+    expect(find.text('ปลูกข้าวฤดูฝน'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

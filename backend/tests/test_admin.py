@@ -96,6 +96,8 @@ def _seed_records(owner_id):
         db.add_all([activity, inspection, task, transaction]); db.flush()
         fuel = FuelRecord(owner_id=owner_id, vehicle_id=vehicle.id, date=date(2026, 1, 9), fuel_type='diesel', amount=10, transaction_id=transaction.id)
         db.add(fuel); db.commit()
+        transaction.fuel_record_id = fuel.id
+        db.commit()
         return {k: str(v.id) for k, v in {'plot': plot, 'cycle': cycle, 'activity': activity, 'inspection': inspection, 'task': task, 'transaction': transaction, 'fuel_record': fuel}.items()}
 
 
@@ -293,6 +295,102 @@ def test_admin_attachment_content_is_admin_only_and_owner_safe(client, tmp_path,
     assert response.content == b'PNG!'
     assert client.get(f'/api/v1/attachments/{attachment_id}/content', headers=other_headers).status_code == 404
     assert client.get(f'/api/v1/attachments/{attachment_id}/content', headers=farmer_headers).status_code == 200
+
+
+def test_admin_production_cycle_detail_is_owner_scoped_and_deduplicates_fuel(client):
+    from app.database import SessionLocal
+    from app.models import Activity, Attachment, FieldInspection, Task
+
+    owner = _register(client)
+    other = _register(client)
+    admin = _register(client)
+    records = _seed_records(owner['user']['id'])
+    other_records = _seed_records(other['user']['id'])
+    headers = _admin_headers(client, admin)
+    with SessionLocal() as db:
+        attachment = Attachment(
+            owner_id=owner['user']['id'], parent_type='activity',
+            parent_id=db.get(Activity, records['activity']).id,
+            storage_name='cycle-detail.png', content_type='image/png', size_bytes=12,
+        )
+        db.add(attachment)
+        db.commit()
+
+    response = client.get(
+        f"/api/v1/admin/production-cycles/{records['cycle']}/detail",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body['cycle']['id'] == records['cycle']
+    assert body['counts'] == {
+        'activities': 1, 'fieldInspections': 1, 'tasks': 1,
+        'transactions': 0, 'fuelRecords': 1,
+    }
+    assert [item['type'] for item in body['timeline']] == [
+        'fuel_record', 'task', 'field_inspection', 'activity',
+    ]
+    assert body['activities'][0]['attachments'][0]['id'] == str(attachment.id)
+    assert {item['id'] for item in body['transactions']} == set()
+    assert {item['id'] for item in body['fuelRecords']} == {records['fuel_record']}
+    assert body['activities'][0]['recorder']['id'] == owner['user']['id']
+    assert other_records['activity'] not in str(body)
+    assert 'passwordHash' not in str(body) and 'p256dh' not in str(body)
+
+
+def test_admin_cycle_detail_attachment_lists_are_parent_specific(client):
+    from datetime import date
+    from app.database import SessionLocal
+    from app.models import Activity, Attachment
+
+    owner = _register(client)
+    admin = _register(client)
+    records = _seed_records(owner['user']['id'])
+    with SessionLocal() as db:
+        second = Activity(
+            owner_id=owner['user']['id'], cycle_id=uuid.UUID(records['cycle']),
+            type='harvest', description='second', date=date(2026, 1, 10),
+        )
+        db.add(second); db.flush()
+        first_attachment = Attachment(
+            owner_id=owner['user']['id'], parent_type='activity',
+            parent_id=uuid.UUID(records['activity']), storage_name='first.png',
+            content_type='image/png', size_bytes=1,
+        )
+        second_attachment = Attachment(
+            owner_id=owner['user']['id'], parent_type='activity',
+            parent_id=second.id, storage_name='second.png',
+            content_type='image/png', size_bytes=1,
+        )
+        db.add_all([first_attachment, second_attachment]); db.commit()
+
+    body = client.get(
+        f"/api/v1/admin/production-cycles/{records['cycle']}/detail",
+        headers=_admin_headers(client, admin),
+    ).json()
+    attachments = {
+        item['id']: [attachment['id'] for attachment in item['attachments']]
+        for item in body['activities']
+    }
+    assert attachments == {
+        records['activity']: [str(first_attachment.id)],
+        str(second.id): [str(second_attachment.id)],
+    }
+
+
+def test_admin_production_cycle_detail_requires_admin_and_rejects_unknown_cycle(client):
+    farmer = _register(client)
+    records = _seed_records(farmer['user']['id'])
+    assert client.get(
+        f"/api/v1/admin/production-cycles/{records['cycle']}/detail",
+        headers={'Authorization': 'Bearer ' + farmer['access_token']},
+    ).status_code == 403
+    admin = _register(client)
+    headers = _admin_headers(client, admin)
+    assert client.get(
+        f"/api/v1/admin/production-cycles/{uuid.uuid4()}/detail",
+        headers=headers,
+    ).status_code == 404
 
 
 def test_admin_plot_created_on_to_date_is_included(client):

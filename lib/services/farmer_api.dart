@@ -640,6 +640,13 @@ class FarmerApi {
     return AdminPage.fromJson(v, (j) => j);
   }
 
+  Future<AdminProductionCycleDetail> adminProductionCycleDetail(
+    String cycleId,
+  ) => _request(
+    'GET',
+    '/admin/production-cycles/$cycleId/detail',
+  ).then((v) => AdminProductionCycleDetail.fromJson(_map(v)));
+
   Future<Map<String, dynamic>> adminRecord(String type, String id) =>
       _request('GET', '/admin/records/$type/$id').then(_map);
 

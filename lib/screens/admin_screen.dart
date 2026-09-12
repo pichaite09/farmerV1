@@ -1042,19 +1042,207 @@ class _RecordsState extends State<AdminRecordsPage> {
     );
   }
 
-  void _showRecord(Map<String, dynamic> r) => showDialog(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('รายละเอียดข้อมูล'),
-      content: SingleChildScrollView(
-        child: _RecordDetails(api: widget.api, record: r),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('ปิด'),
+  void _showRecord(Map<String, dynamic> r) {
+    if (r['type'] == 'production_cycle') {
+      showDialog(
+        context: context,
+        builder: (_) => Dialog(
+          child: SizedBox(
+            width: (MediaQuery.sizeOf(context).width - 48).clamp(0.0, 900.0),
+            child: AdminProductionCycleDetailPage(
+              api: widget.api,
+              cycleId: '${r['id']}',
+            ),
+          ),
         ),
-      ],
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('รายละเอียดข้อมูล'),
+        content: SingleChildScrollView(
+          child: _RecordDetails(api: widget.api, record: r),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ปิด'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AdminProductionCycleDetailPage extends StatefulWidget {
+  final FarmerApi api;
+  final String cycleId;
+  const AdminProductionCycleDetailPage({
+    super.key,
+    required this.api,
+    required this.cycleId,
+  });
+  @override
+  State<AdminProductionCycleDetailPage> createState() =>
+      _AdminProductionCycleDetailPageState();
+}
+
+class _AdminProductionCycleDetailPageState
+    extends State<AdminProductionCycleDetailPage> {
+  String? filter;
+  late Future<AdminProductionCycleDetail> future;
+  @override
+  void initState() {
+    super.initState();
+    future = widget.api.adminProductionCycleDetail(widget.cycleId);
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(20),
+    child: FutureBuilder<AdminProductionCycleDetail>(
+      future: future,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          if (snapshot.hasError)
+            return const _StateBox(
+              icon: Icons.cloud_off_outlined,
+              title: 'โหลดรายละเอียดรอบผลิตไม่สำเร็จ',
+              detail: 'ลองใหม่อีกครั้ง',
+            );
+          return const SizedBox(
+            height: 240,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final detail = snapshot.data!;
+        final cycle = detail.cycle;
+        final items = detail.filtered(filter);
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${cycle['name'] ?? 'รอบผลิต'}',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('ปิด'),
+                  ),
+                  IconButton(
+                    tooltip: 'ปิด',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              Text(
+                '${cycle['cropType'] ?? ''} • ${cycle['status'] ?? ''}',
+                style: const TextStyle(color: _muted),
+              ),
+              Text(
+                'ผู้บันทึก: ${_personName(cycle['recorder'])}',
+                style: const TextStyle(color: _muted),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final entry in const [
+                    ('activities', 'กิจกรรม'),
+                    ('fieldInspections', 'ตรวจแปลง'),
+                    ('tasks', 'งาน'),
+                    ('transactions', 'การเงิน'),
+                    ('fuelRecords', 'เชื้อเพลิง'),
+                  ])
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Text(
+                          '${entry.$2} ${detail.counts[entry.$1] ?? 0}',
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String?>(
+                value: filter,
+                decoration: const InputDecoration(
+                  labelText: 'กรองประเภทในไทม์ไลน์',
+                ),
+                items: const [
+                  DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('ทั้งหมด'),
+                  ),
+                  DropdownMenuItem(value: 'activity', child: Text('กิจกรรม')),
+                  DropdownMenuItem(
+                    value: 'field_inspection',
+                    child: Text('ตรวจแปลง'),
+                  ),
+                  DropdownMenuItem(value: 'task', child: Text('งาน')),
+                  DropdownMenuItem(
+                    value: 'transaction',
+                    child: Text('การเงิน'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'fuel_record',
+                    child: Text('เชื้อเพลิง'),
+                  ),
+                ],
+                onChanged: (value) => setState(() => filter = value),
+              ),
+              const SizedBox(height: 12),
+              if (items.isEmpty)
+                const _Empty('ยังไม่มีรายการในรอบผลิต')
+              else
+                ...items.map(
+                  (item) => Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: Icon(Icons.circle, size: 12, color: _emerald),
+                      title: Text(item.title),
+                      subtitle: Text(
+                        '${_recordTypes[item.type] ?? 'ข้อมูล'} • ${_thaiDate(item.date)}',
+                        style: const TextStyle(color: _muted),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => showDialog(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: Text(
+                            _recordTypes[item.type] ?? 'รายละเอียดข้อมูล',
+                          ),
+                          content: SingleChildScrollView(
+                            child: _RecordDetails(
+                              api: widget.api,
+                              record: item.data,
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('ปิด'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     ),
   );
 }

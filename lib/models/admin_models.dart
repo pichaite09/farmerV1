@@ -96,4 +96,93 @@ class AdminAuditLog {
   );
 }
 
+class AdminCycleDetailItem {
+  final String id, type, title, date;
+  final Map<String, dynamic> data;
+  final List<Attachment> attachments;
+  const AdminCycleDetailItem({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.date,
+    required this.data,
+    required this.attachments,
+  });
+  factory AdminCycleDetailItem.fromJson(Map<String, dynamic> j) {
+    final date =
+        j['date'] ?? j['inspectionDate'] ?? j['dueDate'] ?? j['createdAt'];
+    final title =
+        j['name'] ??
+        j['description'] ??
+        j['item'] ??
+        j['fuelType'] ??
+        j['activityType'] ??
+        j['overallStatus'] ??
+        'รายการ';
+    return AdminCycleDetailItem(
+      id: '${j['id'] ?? ''}',
+      type: '${j['type'] ?? ''}',
+      title: '$title',
+      date: '$date',
+      data: Map.unmodifiable(j),
+      attachments: ((j['attachments'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((x) => Attachment.fromJson(Map<String, dynamic>.from(x)))
+          .toList(),
+    );
+  }
+}
+
+class AdminProductionCycleDetail {
+  final Map<String, dynamic> cycle;
+  final Map<String, int> counts;
+  final List<AdminCycleDetailItem> activities,
+      fieldInspections,
+      tasks,
+      transactions,
+      fuelRecords,
+      timeline;
+  const AdminProductionCycleDetail({
+    required this.cycle,
+    required this.counts,
+    required this.activities,
+    required this.fieldInspections,
+    required this.tasks,
+    required this.transactions,
+    required this.fuelRecords,
+    required this.timeline,
+  });
+  factory AdminProductionCycleDetail.fromJson(Map<String, dynamic> j) {
+    List<AdminCycleDetailItem> items(String key) =>
+        ((j[key] as List?) ?? const [])
+            .whereType<Map>()
+            .map(
+              (x) =>
+                  AdminCycleDetailItem.fromJson(Map<String, dynamic>.from(x)),
+            )
+            .toList();
+    final rawCounts = j['counts'] is Map
+        ? Map<String, dynamic>.from(j['counts'])
+        : <String, dynamic>{};
+    return AdminProductionCycleDetail(
+      cycle: Map.unmodifiable(Map<String, dynamic>.from(j['cycle'] as Map)),
+      counts: rawCounts.map((k, v) => MapEntry(k, (v as num?)?.toInt() ?? 0)),
+      activities: items('activities'),
+      fieldInspections: items('fieldInspections'),
+      tasks: items('tasks'),
+      transactions: items('transactions'),
+      fuelRecords: items('fuelRecords'),
+      timeline: items('timeline'),
+    );
+  }
+  List<AdminCycleDetailItem> filtered(String? type) => switch (type) {
+    'activity' => activities,
+    'field_inspection' => fieldInspections,
+    'task' => tasks,
+    'transaction' => transactions,
+    'fuel_record' => fuelRecords,
+    _ => timeline,
+  };
+}
+
 ApiUser adminUserFromJson(Map<String, dynamic> j) => ApiUser.fromJson(j);

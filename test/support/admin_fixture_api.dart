@@ -115,6 +115,43 @@ class AdminFixtureApi extends FarmerApi {
       ]);
 
   @override
+  Future<AdminProductionCycleDetail> adminProductionCycleDetail(
+    String cycleId,
+  ) async {
+    final records = await adminRecords('all', cycle: cycleId);
+    final children = records.items
+        .where((r) => r['type'] != 'production_cycle')
+        .map(AdminCycleDetailItem.fromJson)
+        .toList();
+    final byType = <String, List<AdminCycleDetailItem>>{
+      for (final type in const [
+        'activity',
+        'field_inspection',
+        'task',
+        'transaction',
+        'fuel_record',
+      ])
+        type: children.where((item) => item.type == type).toList(),
+    };
+    return AdminProductionCycleDetail(
+      cycle: records.items.firstWhere((r) => r['type'] == 'production_cycle'),
+      counts: {
+        'activities': byType['activity']!.length,
+        'fieldInspections': byType['field_inspection']!.length,
+        'tasks': byType['task']!.length,
+        'transactions': byType['transaction']!.length,
+        'fuelRecords': byType['fuel_record']!.length,
+      },
+      activities: byType['activity']!,
+      fieldInspections: byType['field_inspection']!,
+      tasks: byType['task']!,
+      transactions: byType['transaction']!,
+      fuelRecords: byType['fuel_record']!,
+      timeline: children,
+    );
+  }
+
+  @override
   Future<AdminPage<Map<String, dynamic>>> adminRecords(
     String type, {
     String? from,
@@ -143,6 +180,7 @@ class AdminFixtureApi extends FarmerApi {
           (t) => <String, dynamic>{
             'id': 'synthetic-$t',
             'type': t,
+            'cycleId': 'synthetic-production_cycle',
             'createdAt': '2026-09-11T08:00:00Z',
             if (['task', 'production_cycle', 'plot'].contains(t))
               'name': 'แปลงนาข้าวตัวอย่าง',
@@ -168,11 +206,14 @@ class AdminFixtureApi extends FarmerApi {
           },
         )
         .toList();
+    final selected = cycle == null
+        ? records
+        : records.where((r) => r['cycleId'] == cycle).toList();
     return AdminPage(
-      total: records.length,
+      total: selected.length,
       limit: limit,
       offset: offset,
-      items: records,
+      items: selected,
     );
   }
 }
