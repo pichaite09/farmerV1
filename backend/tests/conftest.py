@@ -20,10 +20,10 @@ def _assert_isolated_database():
 def isolated_database():
     _assert_isolated_database()
     with engine.begin() as conn:
-        conn.execute(text('TRUNCATE audit_logs, push_outbox, notifications, announcement_recipients, announcements, push_subscriptions, attachments, field_inspections, fuel_records, transactions, tasks, category_settings, vehicles, activities, production_cycles, plots, sessions, users, auth_throttles'))
+        conn.execute(text('TRUNCATE audit_logs, push_outbox, fcm_device_tokens, notifications, announcement_recipients, announcements, push_subscriptions, attachments, field_inspections, fuel_records, transactions, tasks, category_settings, vehicles, activities, production_cycles, plots, sessions, users, auth_throttles'))
     yield
     with engine.begin() as conn:
-        conn.execute(text('TRUNCATE audit_logs, push_outbox, notifications, announcement_recipients, announcements, push_subscriptions, attachments, field_inspections, fuel_records, transactions, tasks, category_settings, vehicles, activities, production_cycles, plots, sessions, users, auth_throttles'))
+        conn.execute(text('TRUNCATE audit_logs, push_outbox, fcm_device_tokens, notifications, announcement_recipients, announcements, push_subscriptions, attachments, field_inspections, fuel_records, transactions, tasks, category_settings, vehicles, activities, production_cycles, plots, sessions, users, auth_throttles'))
 
 @pytest.fixture
 def client():

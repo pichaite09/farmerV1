@@ -147,6 +147,16 @@ class PushSubscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+class FcmDeviceToken(Base):
+    __tablename__ = 'fcm_device_tokens'
+    __table_args__ = (UniqueConstraint('token', name='uq_fcm_device_tokens_token'),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    token: Mapped[str] = mapped_column(String(4096), unique=True)
+    active: Mapped[bool] = mapped_column(default=True, server_default='true', index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
 class Announcement(Base):
     __tablename__ = 'announcements'
     __table_args__ = (CheckConstraint("status IN ('draft', 'queued', 'sending', 'sent', 'completed', 'cancelled')", name='ck_announcements_status'),)
@@ -189,11 +199,12 @@ class Notification(Base):
 
 class PushOutbox(Base):
     __tablename__ = 'push_outbox'
-    __table_args__ = (UniqueConstraint('notification_id', 'subscription_id', name='uq_push_outbox_notification_subscription'), CheckConstraint("status IN ('pending', 'claimed', 'sent', 'failed')", name='ck_push_outbox_status'))
+    __table_args__ = (UniqueConstraint('notification_id', 'subscription_id', name='uq_push_outbox_notification_subscription'), UniqueConstraint('notification_id', 'fcm_device_id', name='uq_push_outbox_notification_fcm_device'), CheckConstraint("status IN ('pending', 'claimed', 'sent', 'failed')", name='ck_push_outbox_status'))
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
     notification_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('notifications.id', ondelete='CASCADE'), index=True)
-    subscription_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('push_subscriptions.id', ondelete='CASCADE'), index=True)
+    subscription_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('push_subscriptions.id', ondelete='CASCADE'), index=True)
+    fcm_device_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('fcm_device_tokens.id', ondelete='CASCADE'), index=True)
     payload: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(16), default='pending', server_default='pending', index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default='0')

@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from datetime import date as DateType, datetime
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, Field
 from typing import Any, Literal
 from urllib.parse import urlsplit
 import ipaddress
@@ -289,6 +289,16 @@ class PushSubscriptionOut(APIModel):
     id: uuid.UUID
     endpoint: str
     keys: PushSubscriptionKeys
+    created_at: datetime
+    updated_at: datetime
+
+class FcmDeviceTokenCreate(APIModel):
+    token: str = Field(min_length=20, max_length=4096)
+
+class FcmDeviceTokenOut(APIModel):
+    id: uuid.UUID
+    token: str
+    active: bool
     created_at: datetime
     updated_at: datetime
 

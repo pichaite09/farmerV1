@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'farmer_api.dart';
 import 'offline_queue.dart';
@@ -20,6 +22,9 @@ class ApiSession extends ChangeNotifier {
       await _refreshQueue();
       notifyListeners();
     };
+    if (!kIsWeb && Firebase.apps.isNotEmpty) {
+      FirebaseMessaging.instance.onTokenRefresh.listen(_registerFcm);
+    }
   }
   bool get isAuthenticated => api.token != null && user != null;
   Future<void> _refreshQueue() async {
@@ -37,6 +42,7 @@ class ApiSession extends ChangeNotifier {
       try {
         user = ApiUser.fromJson(await api.me());
         api.queueUserId = user!.id;
+        await _registerCurrentFcm();
         await syncOfflineQueue();
       } catch (_) {
         await logout();
@@ -57,6 +63,7 @@ class ApiSession extends ChangeNotifier {
     final p = await SharedPreferences.getInstance();
     await p.setString('farmer_api_token', api.token!);
     await syncOfflineQueue();
+    await _registerCurrentFcm();
     notifyListeners();
   }
 
@@ -80,6 +87,7 @@ class ApiSession extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    await _deactivateCurrentFcm();
     if (api.token != null) {
       try {
         await api.logout();
@@ -93,5 +101,28 @@ class ApiSession extends ChangeNotifier {
     final p = await SharedPreferences.getInstance();
     await p.remove('farmer_api_token');
     notifyListeners();
+  }
+
+  Future<void> _registerCurrentFcm() async {
+    if (kIsWeb || !isAuthenticated || Firebase.apps.isEmpty) return;
+    try {
+      final value = await FirebaseMessaging.instance.getToken();
+      if (value != null) await api.registerFcmToken(value);
+    } catch (_) {}
+  }
+
+  Future<void> _registerFcm(String value) async {
+    if (!isAuthenticated) return;
+    try {
+      await api.registerFcmToken(value);
+    } catch (_) {}
+  }
+
+  Future<void> _deactivateCurrentFcm() async {
+    if (kIsWeb || api.token == null || Firebase.apps.isEmpty) return;
+    try {
+      final value = await FirebaseMessaging.instance.getToken();
+      if (value != null) await api.deactivateFcmToken(value);
+    } catch (_) {}
   }
 }

@@ -172,7 +172,7 @@ def live():
 def ready():
     try:
         with engine.connect() as conn:
-            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0021_announcement_completed'
+            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0022_fcm_device_tokens'
             conn.execute(text('SELECT id FROM users LIMIT 1'))
     except Exception:
         raise HTTPException(503, 'Database not ready')
@@ -190,6 +190,8 @@ from app.notifications import router as notifications_router
 app.include_router(notifications_router)
 from app.push import router as push_router
 app.include_router(push_router)
+from app.devices import router as devices_router
+app.include_router(devices_router)
 from app.field_inspections import router as field_inspections_router
 app.include_router(field_inspections_router)
 from app.admin import router as admin_router

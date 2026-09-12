@@ -22,6 +22,9 @@ services:
       DATABASE_URL: postgresql+psycopg://farmer_main:${POSTGRES_PASSWORD:?required}@postgres/farmer_main
       JWT_SECRET: ${JWT_SECRET:?required}
       CORS_ORIGINS: ${CORS_ORIGINS:?required}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:-}
       ATTACHMENT_STORAGE_PATH: /data/attachments
     volumes:
       - attachment_data:/data/attachments

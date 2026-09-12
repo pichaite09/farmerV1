@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     vapid_public_key: str | None = None
     vapid_private_key: str | None = None
     vapid_subject: str | None = None
+    firebase_project_id: str | None = None
+    firebase_client_email: str | None = None
+    firebase_private_key: str | None = None
 
     @field_validator('database_url')
     @classmethod

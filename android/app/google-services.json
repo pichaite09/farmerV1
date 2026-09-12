@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "986858330835",
+    "project_id": "rice-farm-1bcab",
+    "storage_bucket": "rice-farm-1bcab.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:986858330835:android:9e3ca1cb3100b15226d226",
+        "android_client_info": {
+          "package_name": "com.pichai.farmer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBhH1MHtsZ9ixhNIs-Xsv44Vhf87i7weNc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

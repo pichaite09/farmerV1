@@ -52,6 +52,8 @@ dependencies:
   timezone: ^0.9.3
   web: ^0.5.1
   table_calendar: ^3.1.1
+  firebase_core: ^3.4.0
+  firebase_messaging: ^15.1.0
 
 dev_dependencies:
   flutter_test:

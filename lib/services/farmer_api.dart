@@ -524,6 +524,18 @@ class FarmerApi {
     '/push/subscriptions/$subscriptionId',
     allowQueue: false,
   ).then((_) {});
+  Future<void> registerFcmToken(String tokenValue) => _request(
+    'POST',
+    '/devices/push-token',
+    body: {'token': tokenValue},
+    allowQueue: false,
+  ).then((_) {});
+  Future<void> deactivateFcmToken(String tokenValue) => _request(
+    'DELETE',
+    '/devices/push-token',
+    body: {'token': tokenValue},
+    allowQueue: false,
+  ).then((_) {});
   Future<Categories> categories() => _request(
     'GET',
     '/settings/categories',

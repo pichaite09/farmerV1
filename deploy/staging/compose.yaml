@@ -23,6 +23,9 @@ services:
       DATABASE_URL: postgresql+psycopg://farmer_main_test:${STAGING_POSTGRES_PASSWORD:?required}@postgres/farmer_main_test
       JWT_SECRET: ${STAGING_JWT_SECRET:?required}
       CORS_ORIGINS: ${STAGING_CORS_ORIGINS:-["http://localhost:8091"]}
+      FIREBASE_PROJECT_ID: ${STAGING_FIREBASE_PROJECT_ID:-}
+      FIREBASE_CLIENT_EMAIL: ${STAGING_FIREBASE_CLIENT_EMAIL:-}
+      FIREBASE_PRIVATE_KEY: ${STAGING_FIREBASE_PRIVATE_KEY:-}
       ATTACHMENT_STORAGE_PATH: /data/attachments
     volumes:
       - staging_attachment_data:/data/attachments

@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, settings
-from app.models import Notification, PushOutbox, PushSubscription, Task, User, Announcement, AnnouncementRecipient
+from app.models import Notification, PushOutbox, PushSubscription, FcmDeviceToken, Task, User, Announcement, AnnouncementRecipient
 from app.schemas import PushSubscriptionCreate, PushSubscriptionOut, PushSubscriptionPatch
 
 try:
@@ -96,7 +96,10 @@ def enqueue_push_outbox(db: Session, notifications: list[Notification] | None = 
         subscriptions = db.scalars(select(PushSubscription).join(User, User.id == PushSubscription.owner_id).where(
             PushSubscription.owner_id == notification.owner_id, User.status == 'active',
         )).all()
-        if notification.announcement_id and not subscriptions:
+        devices = db.scalars(select(FcmDeviceToken).where(
+            FcmDeviceToken.owner_id == notification.owner_id, FcmDeviceToken.active.is_(True),
+        )).all()
+        if notification.announcement_id and not subscriptions and not devices:
             db.execute(update(AnnouncementRecipient).where(
                 AnnouncementRecipient.announcement_id == notification.announcement_id,
                 AnnouncementRecipient.user_id == notification.owner_id,
@@ -109,6 +112,13 @@ def enqueue_push_outbox(db: Session, notifications: list[Notification] | None = 
             ).on_conflict_do_nothing(index_elements=['notification_id', 'subscription_id'])
              .returning(PushOutbox.id))
             # PostgreSQL reports -1 for rowcount when RETURNING is used.
+            added += len(result.scalars().all())
+        for device in devices:
+            result = db.execute(insert(PushOutbox).values(
+                owner_id=notification.owner_id, notification_id=notification.id,
+                fcm_device_id=device.id, subscription_id=None, payload=payload,
+            ).on_conflict_do_nothing(index_elements=['notification_id', 'fcm_device_id'])
+             .returning(PushOutbox.id))
             added += len(result.scalars().all())
     now = datetime.now(timezone.utc)
     for announcement_id in announcement_ids:
@@ -154,7 +164,8 @@ def deliver_claimed(db: Session, rows: list[PushOutbox], now: datetime | None = 
     now = now or datetime.now(timezone.utc)
     sent = failed = 0
     for row in rows:
-        subscription = db.get(PushSubscription, row.subscription_id)
+        subscription = db.get(PushSubscription, row.subscription_id) if row.subscription_id else None
+        device = db.get(FcmDeviceToken, row.fcm_device_id) if row.fcm_device_id else None
         notification = db.get(Notification, row.notification_id)
         owner = db.scalar(select(User).where(User.id == row.owner_id).with_for_update())
         if owner is None or owner.status != 'active':
@@ -184,12 +195,18 @@ def deliver_claimed(db: Session, rows: list[PushOutbox], now: datetime | None = 
             failed += 1
             continue
         try:
-            if subscription is None:
-                raise ValueError('subscription no longer exists')
-            ok = send_web_push({'endpoint': subscription.endpoint,
-                'keys': {'p256dh': subscription.p256dh, 'auth': subscription.auth}}, row.payload)
-            if not ok:
-                raise RuntimeError('web push is not configured')
+            if row.fcm_device_id:
+                from app.fcm import send_fcm
+                if device is None or not device.active:
+                    raise ValueError('device token no longer active')
+                send_fcm(device.token, row.payload)
+            else:
+                if subscription is None:
+                    raise ValueError('subscription no longer exists')
+                ok = send_web_push({'endpoint': subscription.endpoint,
+                    'keys': {'p256dh': subscription.p256dh, 'auth': subscription.auth}}, row.payload)
+                if not ok:
+                    raise RuntimeError('web push is not configured')
         except Exception as exc:  # noqa: BLE001
             status_code = getattr(getattr(exc, 'response', None), 'status_code', None)
             if status_code in {404, 410} and subscription is not None:
