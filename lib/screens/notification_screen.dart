@@ -78,8 +78,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
     _future = context.read<ApiSession>().api.notifications();
   }
 
-  void _reload() =>
-      setState(() => _future = context.read<ApiSession>().api.notifications());
+  void _reload() {
+    setState(() {
+      _future = context.read<ApiSession>().api.notifications();
+    });
+  }
 
   Future<void> _openDetails(FarmerNotification item) async {
     try {
