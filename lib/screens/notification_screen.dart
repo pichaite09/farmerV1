@@ -70,6 +70,7 @@ class NotificationScreen extends StatefulWidget {
 }
 
 class _NotificationScreenState extends State<NotificationScreen> {
+  final Set<String> _locallyRead = <String>{};
   late Future<List<FarmerNotification>> _future;
   @override
   void initState() {
@@ -123,7 +124,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
           ],
         ),
       );
-      if (mounted) _reload();
+      if (mounted) {
+        setState(() => _locallyRead.add(item.id));
+      }
     } catch (e) {
       if (mounted)
         ScaffoldMessenger.of(
@@ -153,6 +156,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     if (ok != true) return;
     try {
       await context.read<ApiSession>().api.clearReadNotifications();
+      _locallyRead.clear();
       if (mounted) {
         _reload();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -194,7 +198,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
               ),
             );
           final items = snapshot.data ?? const <FarmerNotification>[];
-          final unread = items.where((x) => !x.isRead).length;
+          final unread = items
+              .where((x) => !x.isRead && !_locallyRead.contains(x.id))
+              .length;
           return Column(
             children: [
               Padding(
@@ -207,7 +213,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
-                    if (items.any((x) => x.isRead))
+                    if (items.any(
+                      (x) => x.isRead || _locallyRead.contains(x.id),
+                    ))
                       TextButton.icon(
                         onPressed: _clearRead,
                         icon: const Icon(Icons.clear_all),
@@ -228,7 +236,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
                           itemBuilder: (_, index) {
                             final item = items[index];
                             return Card(
-                              color: item.isRead
+                              color:
+                                  (item.isRead ||
+                                      _locallyRead.contains(item.id))
                                   ? null
                                   : const Color(0xFFE8F5E9),
                               child: ListTile(
@@ -236,7 +246,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                 leading: CircleAvatar(
                                   backgroundColor: const Color(0xFF087548),
                                   child: Icon(
-                                    item.isRead
+                                    item.isRead ||
+                                            _locallyRead.contains(item.id)
                                         ? Icons.check
                                         : Icons.notifications_active,
                                     color: Colors.white,
