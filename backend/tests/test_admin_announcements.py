@@ -235,7 +235,7 @@ def test_announcement_image_is_private_metadata_and_farmer_owner_scoped(client):
         assert attachment.parent_type == 'announcement' and attachment.owner_id == uuid.UUID(admin['user']['id'])
 
 
-def test_fcm_announcement_payload_carries_private_image_id(client):
+def test_fcm_announcement_payload_carries_private_image_id(client, monkeypatch):
     farmer = register(client); admin = register(client)
     admin_auth = admin_headers(client, admin)
     farmer_auth = {'Authorization': 'Bearer ' + farmer['access_token']}
@@ -250,3 +250,27 @@ def test_fcm_announcement_payload_carries_private_image_id(client):
     with SessionLocal() as db:
         outbox = db.scalar(select(PushOutbox).join(Notification, Notification.id == PushOutbox.notification_id).where(Notification.announcement_id == uuid.UUID(aid)))
         assert outbox.payload['announcementImageId'] == image.json()['id']
+    # Exercise the actual scheduler -> FCM adapter; only the SDK/network is mocked.
+    from app.scheduler import run_delivery_once
+    from app import fcm
+    calls = []
+    app_marker = object()
+    monkeypatch.setattr(fcm, '_app', lambda: app_marker)
+    def provider_send(message, app):
+        assert app is app_marker
+        calls.append(message)
+        return 'projects/fixture/messages/accepted'
+    monkeypatch.setattr(fcm.messaging, 'send', provider_send)
+    with SessionLocal() as db:
+        assert run_delivery_once(db) == (1, 0)
+        assert run_delivery_once(db) == (0, 0)
+        db.expire_all()
+        assert db.get(Announcement, uuid.UUID(aid)).status == 'sent'
+        assert db.scalar(select(AnnouncementRecipient.status).where(AnnouncementRecipient.announcement_id == uuid.UUID(aid))) == 'sent'
+        assert db.scalar(select(PushOutbox.status)) == 'sent'
+    assert len(calls) == 1
+    assert calls[0].token == 'fixture-fcm-token-1234567890'
+    assert calls[0].data['announcementImageId'] == image.json()['id']
+    assert calls[0].notification.title == body['title']
+    assert 'https://' not in str(calls[0].data)
+    assert client.get(f'/api/v1/admin/announcements/{aid}/delivery-summary', headers=admin_auth).json()['sent'] == 1

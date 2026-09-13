@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, settings
+from app.announcement_policy import eligible_notification_clause, notification_allowed
 from app.models import Notification, PushOutbox, PushSubscription, FcmDeviceToken, Task, User, Announcement, AnnouncementRecipient
 from app.schemas import PushSubscriptionCreate, PushSubscriptionOut, PushSubscriptionPatch
 
@@ -52,7 +53,26 @@ def send_web_push(subscription: dict, payload: dict) -> bool:
 
 
 def send_to_owner(db: Session, owner_id: uuid.UUID, payload: dict) -> int:
-    """Compatibility helper for callers that need immediate fan-out."""
+    """Compatibility path: only deliver an eligible persisted owner notification.
+
+    Never trust caller-supplied content or an absent ID to bypass the outbox gate.
+    New production callers should use the durable outbox instead.
+    """
+    try:
+        notification_id = uuid.UUID(str(payload.get('notificationId')))
+    except (ValueError, TypeError, AttributeError):
+        return 0
+    notification = db.get(Notification, notification_id)
+    if (notification is None or notification.owner_id != owner_id
+            or not notification_allowed(db, notification_id)
+            or notification.dismissed_at is not None):
+        return 0
+    task = db.get(Task, notification.task_id) if notification.task_id else None
+    announcement = db.get(Announcement, notification.announcement_id) if notification.announcement_id else None
+    if (notification.kind == 'task_due_tomorrow' and (task is None or task.status in {'completed', 'cancelled'})) or (notification.kind == 'admin_announcement' and (announcement is None or announcement.status == 'cancelled')):
+        return 0
+    payload = {'notificationId': str(notification.id), 'title': notification.title,
+               'body': notification.body, 'url': '/#/notifications'}
     sent = 0
     owner = db.scalar(select(User).where(User.id == owner_id))
     if owner is None or owner.status != 'active':
@@ -73,7 +93,7 @@ def send_to_owner(db: Session, owner_id: uuid.UUID, payload: dict) -> int:
 
 def enqueue_push_outbox(db: Session, notifications: list[Notification] | None = None, owner_id: uuid.UUID | None = None, commit: bool = True) -> int:
     """Enqueue one idempotent delivery per notification and current subscription."""
-    query = select(Notification).where(Notification.kind.in_(['task_due_tomorrow', 'admin_announcement']))
+    query = select(Notification).where(Notification.kind.in_(['task_due_tomorrow', 'admin_announcement']), eligible_notification_clause())
     if notifications is not None:
         ids = [n.id for n in notifications]
         if not ids:
@@ -140,12 +160,16 @@ def claim_push_outbox(db: Session, limit: int = 100, now: datetime | None = None
     """Atomically claim available work; stale claims are safely recoverable."""
     now = now or datetime.now(timezone.utc)
     stale = now - timedelta(seconds=LEASE_SECONDS)
-    db.execute(update(PushOutbox).where(PushOutbox.status == 'claimed', PushOutbox.claimed_at < stale)
+    eligible = select(Notification.id).where(
+        Notification.id == PushOutbox.notification_id, eligible_notification_clause(),
+    ).exists()
+    db.execute(update(PushOutbox).where(PushOutbox.status == 'claimed', PushOutbox.claimed_at < stale, eligible)
                .values(status='pending', claimed_at=None))
     rows = db.scalars(select(PushOutbox).where(
         or_(PushOutbox.status == 'pending',
             (PushOutbox.status == 'claimed') & (PushOutbox.claimed_at < stale)),
         PushOutbox.next_attempt_at <= now,
+        eligible,
     ).order_by(PushOutbox.created_at, PushOutbox.id).limit(limit).with_for_update(skip_locked=True)).all()
     for row in rows:
         row.status = 'claimed'
@@ -167,6 +191,10 @@ def deliver_claimed(db: Session, rows: list[PushOutbox], now: datetime | None = 
     now = now or datetime.now(timezone.utc)
     sent = failed = 0
     for row in rows:
+        # Final provider boundary also protects already-claimed / direct retry
+        # rows. Leave every historical status, attempt and timestamp unchanged.
+        if not notification_allowed(db, row.notification_id):
+            continue
         subscription = db.get(PushSubscription, row.subscription_id) if row.subscription_id else None
         device = db.get(FcmDeviceToken, row.fcm_device_id) if row.fcm_device_id else None
         notification = db.get(Notification, row.notification_id)

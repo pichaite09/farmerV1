@@ -1711,6 +1711,16 @@ String _formatRecordDetailValue(String key, Object? value) {
   return 'ไม่ระบุ';
 }
 
+String _announcementStatusLabel(String status) => switch (status) {
+  'draft' => 'ฉบับร่าง',
+  'queued' => 'รอส่ง',
+  'sending' => 'กำลังส่ง',
+  'sent' => 'ส่งแล้ว',
+  'completed' => 'สิ้นสุดโดยไม่มี Push สำเร็จ',
+  'cancelled' => 'ยกเลิกแล้ว',
+  _ => 'ไม่ทราบสถานะ',
+};
+
 class AdminAnnouncementsPage extends StatefulWidget {
   final FarmerApi api;
   const AdminAnnouncementsPage({super.key, required this.api});
@@ -1785,13 +1795,7 @@ class _AnnouncementsState extends State<AdminAnnouncementsPage> {
           builder: (items) {
             final shown = tab == 'all'
                 ? items
-                : items
-                      .where(
-                        (a) => tab == 'sent'
-                            ? a.status != 'draft'
-                            : a.status == tab,
-                      )
-                      .toList();
+                : items.where((a) => a.status == tab).toList();
             return shown.isEmpty
                 ? const _Empty('ยังไม่มีประกาศ')
                 : Column(children: shown.map(_announcement).toList());
@@ -1803,10 +1807,10 @@ class _AnnouncementsState extends State<AdminAnnouncementsPage> {
   Widget _announcement(AdminAnnouncement a) => Card(
     margin: const EdgeInsets.only(bottom: 8),
     child: ListTile(
-      leading: _Dot(color: a.status == 'draft' ? Colors.amber : _emerald),
+      leading: _Dot(color: a.status == 'sent' ? _emerald : Colors.amber),
       title: Text(a.title),
       subtitle: Text(
-        '${a.status == 'draft' ? 'ฉบับร่าง' : 'ส่งแล้ว'}  •  ผู้รับ ${a.targetCount} คน',
+        '${_announcementStatusLabel(a.status)}  •  ผู้รับ ${a.targetCount} คน',
         style: const TextStyle(color: _muted),
       ),
       trailing: a.status == 'draft'

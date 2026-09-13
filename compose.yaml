@@ -16,6 +16,7 @@ services:
       retries: 20
     networks: [private]
   api:
+    image: farmer-main-api:${FARMER_MAIN_IMAGE_TAG:-latest}
     build: ./backend
     restart: unless-stopped
     environment:
@@ -37,6 +38,30 @@ services:
       interval: 10s
       timeout: 6s
       retries: 10
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    networks: [private, edge]
+  # Opt-in: starting this worker can deliver existing durable broadcasts.
+  # Review the queue and follow deploy/ANNOUNCEMENT_RECOVERY.md first.
+  scheduler:
+    profiles: [notifications]
+    image: farmer-main-api:${FARMER_MAIN_IMAGE_TAG:-latest}
+    build: ./backend
+    command: [python, -m, app.scheduler]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://farmer_main:${POSTGRES_PASSWORD:?required}@postgres/farmer_main
+      JWT_SECRET: ${JWT_SECRET:?required}
+      CORS_ORIGINS: ${CORS_ORIGINS:?required}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:-}
+      ATTACHMENT_STORAGE_PATH: /data/attachments
+    volumes:
+      - attachment_data:/data/attachments
+    depends_on:
+      api:
+        condition: service_healthy
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     networks: [private, edge]

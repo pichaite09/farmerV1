@@ -410,6 +410,9 @@ def send_announcement(announcement_id: uuid.UUID, identity=Depends(admin_session
     row = db.scalar(select(Announcement).where(Announcement.id == announcement_id, Announcement.owner_id == identity[1].id).with_for_update())
     if row is None: raise HTTPException(404, 'Announcement not found')
     if row.status != 'draft': raise HTTPException(409, 'only drafts can be sent')
+    from app.announcement_policy import announcement_allowed
+    if not announcement_allowed(db, row):
+        raise HTTPException(409, 'ประกาศนี้สร้างก่อนเปิดระบบแจ้งเตือนใหม่ จึงไม่อนุญาตให้ส่ง')
     if row.target_type == 'all': user_ids = db.scalars(select(User.id).where(User.role == 'farmer', User.status == 'active')).all()
     elif row.target_type == 'role': user_ids = db.scalars(select(User.id).where(User.role == 'farmer', User.role == row.target_role, User.status == 'active')).all()
     else: user_ids = db.scalars(select(User.id).where(User.id.in_([uuid.UUID(x) for x in (row.target_user_ids or [])]), User.role == 'farmer', User.status == 'active')).all()
